@@ -1,0 +1,123 @@
+@model SasJobRunner.ViewModels.DatasetViewModel
+@{
+    ViewData["Title"] = "Dataset Explorer";
+    Layout = "_Layout";
+
+    var pagedData = Model.PagedData;
+    var rows = pagedData?.Items ?? [];
+    var totalCount = pagedData?.TotalCount ?? 0;
+    var currentPage = pagedData?.Page ?? 1;
+    var pageSize = pagedData?.PageSize ?? 100;
+    var totalPages = pageSize > 0 ? (int)Math.Ceiling((double)totalCount / pageSize) : 1;
+
+    // Derive columns from the first row's keys, or empty list
+    var columns = rows.Count > 0 ? rows[0].Columns.Keys.ToList() : new List<string>();
+
+    var sortCol = Model.SortColumn ?? string.Empty;
+    var sortDir = Model.SortDirection ?? "asc";
+    var nextSortDir = sortDir == "asc" ? "desc" : "asc";
+}
+
+<div class="dataset-page">
+    <aside class="dataset-sidebar">
+        <h2>Datasets</h2>
+        @if (Model.AvailableDatasets.Count == 0)
+        {
+            <p class="empty-message">No datasets available.</p>
+        }
+        else
+        {
+            <ul class="dataset-list">
+                @foreach (var ds in Model.AvailableDatasets)
+                {
+                    <li class="@(ds == Model.SelectedDataset ? "active" : "")">
+                        <a href="/Dataset?dataset=@Uri.EscapeDataString(ds)">@ds</a>
+                    </li>
+                }
+            </ul>
+        }
+    </aside>
+
+    <div class="dataset-content">
+        @if (Model.SelectedDataset != null)
+        {
+            <h2>@Model.SelectedDataset</h2>
+        }
+        else
+        {
+            <h2>Select a dataset</h2>
+        }
+
+        @if (rows.Count > 0 && columns.Count > 0)
+        {
+            <div class="dataset-table-wrapper">
+                <table class="dataset-table">
+                    <thead>
+                        <tr>
+                            @foreach (var col in columns)
+                            {
+                                var isSorted = col == sortCol;
+                                var icon = isSorted ? (sortDir == "asc" ? " ▲" : " ▼") : "";
+                                var nextDir = isSorted ? nextSortDir : "asc";
+                                <th>
+                                    <a href="/Dataset?dataset=@Uri.EscapeDataString(Model.SelectedDataset ?? "")&sortColumn=@Uri.EscapeDataString(col)&sortDirection=@nextDir&page=1">
+                                        @col@icon
+                                    </a>
+                                </th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in rows)
+                        {
+                            <tr>
+                                @foreach (var col in columns)
+                                {
+                                    <td>@(row.Columns.TryGetValue(col, out var val) ? val : "")</td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pagination-controls">
+                @if (currentPage > 1)
+                {
+                    <a class="btn-page" href="/Dataset?dataset=@Uri.EscapeDataString(Model.SelectedDataset ?? "")&sortColumn=@Uri.EscapeDataString(sortCol)&sortDirection=@sortDir&page=@(currentPage - 1)">
+                        ← Previous
+                    </a>
+                }
+                else
+                {
+                    <span class="btn-page disabled">← Previous</span>
+                }
+
+                <span class="page-indicator">Page @currentPage of @totalPages</span>
+
+                @if (currentPage < totalPages)
+                {
+                    <a class="btn-page" href="/Dataset?dataset=@Uri.EscapeDataString(Model.SelectedDataset ?? "")&sortColumn=@Uri.EscapeDataString(sortCol)&sortDirection=@sortDir&page=@(currentPage + 1)">
+                        Next →
+                    </a>
+                }
+                else
+                {
+                    <span class="btn-page disabled">Next →</span>
+                }
+            </div>
+        }
+        else if (Model.SelectedDataset != null)
+        {
+            <p class="empty-message">No data to display for this dataset.</p>
+        }
+        else
+        {
+            <p class="empty-message">Select a dataset from the sidebar to view its contents.</p>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <script src="~/js/dataset.js" asp-append-version="true"></script>
+}

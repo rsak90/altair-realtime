@@ -1,0 +1,37 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - SAS Job Runner</title>
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+</head>
+<body>
+    <header class="site-header">
+        <nav class="site-nav">
+            <a class="site-brand" href="/Editor">SAS Job Runner</a>
+            <ul class="nav-links">
+                <li><a href="/Editor">Editor</a></li>
+                <li><a href="/Dataset">Dataset</a></li>
+                <li><a href="/History">History</a></li>
+                <li><a href="/Session">Session</a></li>
+            </ul>
+            <div class="session-info">
+                @{
+                    var sessionId = Context.Session.GetString("SessionId");
+                    var userId = Context.Session.GetString("UserId");
+                }
+                <span class="user-identity">User: <strong>@(userId ?? "—")</strong></span>
+                <span class="session-selector">Session: <strong>@(sessionId ?? "none")</strong></span>
+            </div>
+        </nav>
+    </header>
+
+    <main class="site-main">
+        @RenderBody()
+    </main>
+
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

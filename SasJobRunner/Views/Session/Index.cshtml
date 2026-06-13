@@ -1,0 +1,55 @@
+@model SasJobRunner.ViewModels.SessionViewModel
+@{
+    ViewData["Title"] = "Session";
+    Layout = "_Layout";
+}
+
+<div class="session-page">
+    <h1>Session Management</h1>
+
+    @if (Model.ActiveSessionId != null)
+    {
+        <div class="active-session">
+            <p>Active session: <strong>@Model.ActiveSessionId</strong></p>
+        </div>
+    }
+
+    <section class="session-section">
+        <h2>New Session</h2>
+        <p>Start a fresh SAS session with a new session ID.</p>
+        <form method="post" action="/Session/New">
+            @Html.AntiForgeryToken()
+            <button type="submit">New Session</button>
+        </form>
+    </section>
+
+    @if (Model.PastSessions.Count > 0)
+    {
+        <section class="session-section">
+            <h2>Resume Session</h2>
+            <p>Select a past session to resume from where you left off.</p>
+            <form method="post" action="/Session/Resume">
+                @Html.AntiForgeryToken()
+                <div class="form-row">
+                    <label for="sessionId">Past Sessions</label>
+                    <select id="sessionId" name="sessionId">
+                        @foreach (var session in Model.PastSessions)
+                        {
+                            <option value="@session.SessionId">
+                                @session.SessionId — last used @session.LastAccessedAt.ToString("yyyy-MM-dd HH:mm") UTC
+                            </option>
+                        }
+                    </select>
+                </div>
+                <button type="submit">Resume Session</button>
+            </form>
+        </section>
+    }
+    else
+    {
+        <section class="session-section">
+            <h2>Resume Session</h2>
+            <p>No past sessions found. Start a new session above.</p>
+        </section>
+    }
+</div>

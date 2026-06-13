@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="SasJobRunner.Tests/SasJobRunner.Tests.csproj" />
+  <Project Path="SasJobRunner/SasJobRunner.csproj" />
+</Solution>

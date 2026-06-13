@@ -1,0 +1,51 @@
+@model SasJobRunner.ViewModels.EditorViewModel
+@{
+    ViewData["Title"] = "Editor";
+    Layout = "_Layout";
+}
+
+<div class="editor-page">
+    <div class="editor-toolbar">
+        <button id="btn-submit" type="button">Submit</button>
+        <button id="btn-jump-error" type="button" disabled>Jump to Error</button>
+    </div>
+
+    <div class="editor-body">
+        <div id="editor-container" data-initial-code="@Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.InitialCode))" data-session-id="@Model.SessionId"></div>
+
+        <div id="right-panel">
+            <div class="panel-tabs">
+                <button class="panel-tab active" data-tab="log">Log Output</button>
+                <button class="panel-tab" data-tab="files">Files</button>
+            </div>
+            
+            <div id="log-panel" class="tab-content active">
+                <div id="log-container"></div>
+            </div>
+            
+            <div id="files-panel" class="tab-content">
+                <div id="files-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dataset Viewer Modal -->
+    <div id="dataset-viewer-modal" class="modal-overlay">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h2>Dataset Viewer</h2>
+                <button class="modal-close" type="button">&times;</button>
+            </div>
+            <div class="modal-content">
+                <!-- Content will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+    <script src="~/js/editor.js" asp-append-version="true"></script>
+    <script src="~/js/log-viewer.js" asp-append-version="true"></script>
+    <script src="~/js/file-browser.js" asp-append-version="true"></script>
+}

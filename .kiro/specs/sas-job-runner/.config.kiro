@@ -1,0 +1,6 @@
+{
+  "specType": "feature",
+  "specName": "sas-job-runner",
+  "projectRoot": "SasJobRunner",
+  "testProject": "SasJobRunner.Tests"
+}

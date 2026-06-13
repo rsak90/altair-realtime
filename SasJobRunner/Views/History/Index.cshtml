@@ -1,0 +1,81 @@
+@model SasJobRunner.ViewModels.HistoryViewModel
+@{
+    ViewData["Title"] = "Program History";
+    Layout = "_Layout";
+}
+
+<div class="history-page">
+    <h1>Program History</h1>
+
+    @if (Model.Items.Count == 0)
+    {
+        <p class="empty-message">No program history found. Submit a job from the Editor to see records here.</p>
+    }
+    else
+    {
+        <div class="history-list">
+            @foreach (var item in Model.Items)
+            {
+                <div class="history-record"
+                     data-record-id="@item.RecordId"
+                     data-source="@item.SourceCodePreview">
+                    <div class="history-record-header">
+                        <span class="history-timestamp">@item.SubmittedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</span>
+                        <span class="history-session">Session: @item.SessionId</span>
+                        <button class="btn-load-editor"
+                                type="button"
+                                data-record-id="@item.RecordId">
+                            Load in Editor
+                        </button>
+                    </div>
+
+                    <div class="history-code-preview">
+                        <code>@item.SourceCodePreview@(item.SourceCodePreview.Length >= 120 ? "…" : "")</code>
+                    </div>
+
+                    <div class="history-record-footer">
+                        <span class="history-log-summary @(item.LogSummary.StartsWith("ERROR", StringComparison.OrdinalIgnoreCase) ? "log-error" : item.LogSummary.StartsWith("WARNING", StringComparison.OrdinalIgnoreCase) ? "log-warning" : "log-ok")">
+                            @item.LogSummary
+                        </span>
+                        @if (item.DatasetsProduced.Count > 0)
+                        {
+                            <span class="history-datasets">
+                                Datasets: @string.Join(", ", item.DatasetsProduced)
+                            </span>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <script>
+        // Wire up "Load in Editor" buttons — navigate to /Editor with source code in sessionStorage
+        document.querySelectorAll('.btn-load-editor').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var recordId = btn.getAttribute('data-record-id');
+                var record = btn.closest('.history-record');
+                // Store full source code request via fetch, then navigate
+                fetch('/api/history/' + recordId)
+                    .then(function (res) {
+                        if (res.ok) return res.json();
+                        // Fallback: use the preview text and navigate
+                        return null;
+                    })
+                    .then(function (data) {
+                        var code = data && data.sourceCode ? data.sourceCode : record.getAttribute('data-source');
+                        sessionStorage.setItem('editorLoadCode', code);
+                        window.location.href = '/Editor';
+                    })
+                    .catch(function () {
+                        // Fallback to preview if API unavailable
+                        var code = record.getAttribute('data-source') || '';
+                        sessionStorage.setItem('editorLoadCode', code);
+                        window.location.href = '/Editor';
+                    });
+            });
+        });
+    </script>
+}
