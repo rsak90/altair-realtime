@@ -58,7 +58,7 @@ public sealed class SessionJobOrchestrator(
             var startTime = DateTime.UtcNow;
             string status = "Running";
 
-            while (status != "CompletedSuccess" && status != "Failed")
+            while (status != "CompletedSuccess" && status != "CompletedError" && status != "Failed")
             {
                 if (DateTime.UtcNow - startTime > maxWaitTime)
                 {
@@ -69,31 +69,106 @@ public sealed class SessionJobOrchestrator(
                 status = await hubClient.GetJobStatusAsync(jobId, ct);
             }
 
-            // Fetch log content
-            var logContent = await hubClient.GetJobLogAsync(jobId, ct);
-            foreach (var line in logContent.Split('\n'))
-            {
-                logLines.Add(line);
-                await signalrContext.Clients.Group(jobId)
-                    .SendAsync("ReceiveLog", line, ct);
-            }
+            logger.LogInformation("Job {JobId} reached terminal state: {Status}", jobId, status);
 
-            // Fetch result files and process stderr
-            var results = await hubClient.GetJobResultsAsync(jobId, ct);
-            var stderrFile = results.FirstOrDefault(f => f.Name.Equals("stderr", StringComparison.OrdinalIgnoreCase));
-            if (stderrFile is not null)
+            // Fetch log content (main log)
+            try
             {
-                var stderrContent = await hubClient.GetResultFileContentAsync(stderrFile.Url, ct);
-                foreach (var line in stderrContent.Split('\n'))
+                var logContent = await hubClient.GetJobLogAsync(jobId, ct);
+                if (!string.IsNullOrEmpty(logContent))
                 {
-                    var parsed = LogLine.Parse(line);
-                    if (parsed.Severity != LogSeverity.Plain)
+                    foreach (var line in logContent.Split('\n'))
                     {
                         logLines.Add(line);
                         await signalrContext.Clients.Group(jobId)
                             .SendAsync("ReceiveLog", line, ct);
                     }
+                    logger.LogInformation("Job {JobId}: Streamed {Count} log lines from main log", jobId, logLines.Count);
                 }
+                else
+                {
+                    logger.LogWarning("Job {JobId}: Main log content is empty", jobId);
+                }
+            }
+            catch (SlcHubException ex)
+            {
+                logger.LogError(ex, "Job {JobId}: Failed to fetch job log. Status code: {StatusCode}. Message: {Message}", 
+                    jobId, ex.StatusCode, ex.Message);
+                // Send error info to client but continue - maybe stderr has the log
+                await signalrContext.Clients.Group(jobId)
+                    .SendAsync("ReceiveLog", $"WARNING: Unable to fetch main job log (HTTP {ex.StatusCode})", ct);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Job {JobId}: Unexpected error fetching job log", jobId);
+                await signalrContext.Clients.Group(jobId)
+                    .SendAsync("ReceiveLog", $"WARNING: Unexpected error fetching job log: {ex.Message}", ct);
+            }
+
+            // Fetch result files and process stderr (may contain the actual log for error cases)
+            try
+            {
+                var results = await hubClient.GetJobResultsAsync(jobId, ct);
+                logger.LogInformation("Job {JobId}: Found {Count} result files", jobId, results.Count);
+                
+                // For CompletedError, the log might be in stdout file
+                var stdoutFile = results.FirstOrDefault(f => f.Name.Equals("stdout", StringComparison.OrdinalIgnoreCase));
+                if (stdoutFile is not null)
+                {
+                    logger.LogInformation("Job {JobId}: Processing stdout file from {Url}", jobId, stdoutFile.Url);
+                    var stdoutContent = await hubClient.GetResultFileContentAsync(stdoutFile.Url, ct);
+                    if (!string.IsNullOrEmpty(stdoutContent))
+                    {
+                        var stdoutLines = stdoutContent.Split('\n');
+                        foreach (var line in stdoutLines)
+                        {
+                            if (!logLines.Contains(line)) // Avoid duplicates
+                            {
+                                logLines.Add(line);
+                                await signalrContext.Clients.Group(jobId)
+                                    .SendAsync("ReceiveLog", line, ct);
+                            }
+                        }
+                        logger.LogInformation("Job {JobId}: Processed {Count} lines from stdout", jobId, stdoutLines.Length);
+                    }
+                }
+                
+                var stderrFile = results.FirstOrDefault(f => f.Name.Equals("stderr", StringComparison.OrdinalIgnoreCase));
+                if (stderrFile is not null)
+                {
+                    logger.LogInformation("Job {JobId}: Processing stderr file from {Url}", jobId, stderrFile.Url);
+                    var stderrContent = await hubClient.GetResultFileContentAsync(stderrFile.Url, ct);
+                    if (!string.IsNullOrEmpty(stderrContent))
+                    {
+                        var stderrLines = stderrContent.Split('\n');
+                        foreach (var line in stderrLines)
+                        {
+                            var parsed = LogLine.Parse(line);
+                            if (parsed.Severity != LogSeverity.Plain)
+                            {
+                                if (!logLines.Contains(line)) // Avoid duplicates
+                                {
+                                    logLines.Add(line);
+                                    await signalrContext.Clients.Group(jobId)
+                                        .SendAsync("ReceiveLog", line, ct);
+                                }
+                            }
+                        }
+                        logger.LogInformation("Job {JobId}: Processed stderr content, {Count} lines total", jobId, stderrLines.Length);
+                    }
+                }
+                
+                if (stdoutFile is null && stderrFile is null && logLines.Count == 0)
+                {
+                    logger.LogWarning("Job {JobId}: No log content found in main log, stdout, or stderr", jobId);
+                    await signalrContext.Clients.Group(jobId)
+                        .SendAsync("ReceiveLog", "WARNING: No log content available for this job", ct);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Job {JobId}: Failed to fetch or process result files", jobId);
+                // Continue execution - result files are optional
             }
 
             await signalrContext.Clients.Group(jobId)
