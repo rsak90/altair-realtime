@@ -21,27 +21,49 @@ public sealed class DatasetReaderService(
     {
         // Generate SAS code to get metadata using PROC CONTENTS
         var sasCode = $@"
+/* Get metadata using PROC CONTENTS */
 PROC CONTENTS DATA=SESSLIB.{datasetName} OUT=_meta_ NOPRINT;
 RUN;
 
+/* Get row count and column count */
+PROC SQL NOPRINT;
+    SELECT NOBS, NVAR INTO :nobs TRIMMED, :nvar TRIMMED
+    FROM _meta_(OBS=1);
+QUIT;
+
+/* Export column information as JSON */
+FILENAME outjson STDOUT;
+
 DATA _NULL_;
-    SET _meta_ END=eof;
+    SET _meta_;
     FILE STDOUT;
+    
     IF _N_ = 1 THEN DO;
-        PUT '{{""columns"":[';
+        PUT '[';
     END;
-    IF _N_ > 1 THEN PUT ',';
-    PUT '{{""name"":""' NAME +(-1) '"",' ;
-    PUT '""type"":""' TYPE +(-1) '"",' ;
-    PUT '""length"":' LENGTH ',' ;
-    PUT '""format"":""' FORMAT +(-1) '"",' ;
-    PUT '""label"":""' LABEL +(-1) '""}}';
-    IF eof THEN DO;
-        PUT '],';
-        PUT '""rowCount"":' NOBS ',';
-        PUT '""columnCount"":' NVAR;
-        PUT '}}';
+    ELSE DO;
+        PUT ',';
     END;
+    
+    PUT '{{';
+    PUT '""name"":""' NAME +(-1) '"",';
+    PUT '""type"":""' TYPE +(-1) '"",';
+    PUT '""length"":' LENGTH ',';
+    PUT '""format"":""' FORMAT +(-1) '"",';
+    PUT '""label"":""' LABEL +(-1) '""';
+    PUT '}}';
+RUN;
+
+DATA _NULL_;
+    FILE STDOUT;
+    PUT ']';
+    PUT '___METADATA___';
+    PUT &nobs;
+    PUT &nvar;
+RUN;
+
+/* Clean up */
+PROC DELETE DATA=_meta_;
 RUN;
 ";
 
@@ -70,20 +92,50 @@ RUN;
 
         var stdoutContent = await hubClient.GetResultFileContentAsync(stdoutFile.Url, ct);
         
-        // Parse JSON output
-        var json = JsonSerializer.Deserialize<JsonElement>(stdoutContent);
-        var columns = json.GetProperty("columns").EnumerateArray()
-            .Select(col => new ColumnInfo(
-                col.GetProperty("name").GetString() ?? "",
-                col.GetProperty("type").GetString() ?? "",
-                col.GetProperty("length").GetInt32(),
-                col.TryGetProperty("format", out var fmt) ? fmt.GetString() : null,
-                col.TryGetProperty("label", out var lbl) ? lbl.GetString() : null
-            ))
-            .ToList();
+        // Parse the output - it contains JSON array followed by marker and metadata
+        var markerIndex = stdoutContent.IndexOf("___METADATA___");
+        
+        if (markerIndex == -1)
+        {
+            throw new InvalidOperationException("Could not find metadata marker in stdout");
+        }
 
-        var rowCount = json.GetProperty("rowCount").GetInt32();
-        var columnCount = json.GetProperty("columnCount").GetInt32();
+        var jsonData = stdoutContent.Substring(0, markerIndex).Trim();
+        var afterMarker = stdoutContent.Substring(markerIndex + "___METADATA___".Length).Trim();
+        var metadataLines = afterMarker.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        
+        // Parse column information
+        List<ColumnInfo> columns = new();
+        
+        if (!string.IsNullOrWhiteSpace(jsonData))
+        {
+            try
+            {
+                var columnsJson = JsonSerializer.Deserialize<JsonElement>(jsonData);
+                
+                if (columnsJson.ValueKind == JsonValueKind.Array)
+                {
+                    columns = columnsJson.EnumerateArray()
+                        .Select(col => new ColumnInfo(
+                            col.GetProperty("name").GetString() ?? "",
+                            col.GetProperty("type").GetString() ?? "",
+                            col.GetProperty("length").GetInt32(),
+                            col.TryGetProperty("format", out var fmt) ? fmt.GetString() : null,
+                            col.TryGetProperty("label", out var lbl) ? lbl.GetString() : null
+                        ))
+                        .ToList();
+                }
+            }
+            catch (JsonException ex)
+            {
+                logger.LogError(ex, "Failed to parse metadata JSON. Content: {Content}", jsonData);
+                throw new InvalidOperationException($"Failed to parse metadata JSON: {ex.Message}");
+            }
+        }
+
+        // Parse row count and column count
+        var rowCount = metadataLines.Length > 0 && int.TryParse(metadataLines[0].Trim(), out var rc) ? rc : 0;
+        var columnCount = metadataLines.Length > 1 && int.TryParse(metadataLines[1].Trim(), out var cc) ? cc : columns.Count;
 
         // Get file info
         var studyFolder = configuration["SessionStorage:StudyFolder"] 
@@ -111,9 +163,9 @@ RUN;
         // Build WHERE clause from filters
         var whereClause = BuildWhereClause(request.Filters);
         
-        // Build ORDER BY clause
+        // Build ORDER BY clause for PROC SQL
         var orderByClause = request.SortColumn != null
-            ? $"ORDER BY {request.SortColumn} {(request.SortAscending ? "ASC" : "DESC")}"
+            ? $"ORDER BY {request.SortColumn} {(request.SortAscending ? "" : "DESC")}"
             : "";
 
         // Calculate start and end observation numbers
@@ -124,36 +176,47 @@ RUN;
         var sasCode = $@"
 /* Count total rows matching filter */
 PROC SQL NOPRINT;
-    SELECT COUNT(*) INTO :total_rows
+    SELECT COUNT(*) INTO :total_rows TRIMMED
     FROM SESSLIB.{datasetName}
     {whereClause};
 QUIT;
 
-/* Export paginated data */
-DATA _export_;
-    SET SESSLIB.{datasetName}(FIRSTOBS={startObs} OBS={endObs});
-    {whereClause.Replace("WHERE", "WHERE")}
-    {orderByClause}
+/* Create filtered and sorted dataset */
+PROC SQL;
+    CREATE TABLE _export_ AS
+    SELECT *
+    FROM SESSLIB.{datasetName}
+    {whereClause}
+    {orderByClause};
+QUIT;
+
+/* Apply pagination */
+DATA _export_page_;
+    SET _export_(FIRSTOBS={startObs} OBS={endObs});
 RUN;
 
-/* Export as JSON */
-FILENAME outjson TEMP;
-PROC JSON OUT=outjson PRETTY;
-    EXPORT _export_;
+/* Export as JSON to stdout */
+FILENAME outjson STDOUT;
+PROC JSON OUT=outjson;
+    EXPORT _export_page_;
 RUN;
 
-/* Print JSON to stdout */
+/* Output marker */
 DATA _NULL_;
-    INFILE outjson;
     FILE STDOUT;
-    INPUT;
-    PUT _INFILE_;
+    PUT '___TOTAL_ROWS___';
 RUN;
 
 /* Output total count */
 DATA _NULL_;
     FILE STDOUT;
-    PUT '{{""totalRows"":' &total_rows '}}';
+    PUT &total_rows;
+RUN;
+
+/* Clean up */
+PROC DELETE DATA=_export_;
+RUN;
+PROC DELETE DATA=_export_page_;
 RUN;
 ";
 
@@ -182,28 +245,54 @@ RUN;
 
         var stdoutContent = await hubClient.GetResultFileContentAsync(stdoutFile.Url, ct);
         
-        // Parse JSON output
-        var lines = stdoutContent.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        var jsonData = string.Join("", lines.TakeWhile(l => !l.Contains("totalRows")));
-        var totalLine = lines.FirstOrDefault(l => l.Contains("totalRows"));
-
-        var dataJson = JsonSerializer.Deserialize<JsonElement>(jsonData);
-        var rows = dataJson.EnumerateArray()
-            .Select(row => {
-                var cols = new Dictionary<string, string>();
-                foreach (var prop in row.EnumerateObject())
-                {
-                    cols[prop.Name] = prop.Value.ToString();
-                }
-                return new DatasetRow(cols);
-            })
-            .ToList();
-
-        var totalRows = 0;
-        if (totalLine != null)
+        // Parse the output - it contains JSON array followed by marker and total count
+        var markerIndex = stdoutContent.IndexOf("___TOTAL_ROWS___");
+        
+        if (markerIndex == -1)
         {
-            var totalJson = JsonSerializer.Deserialize<JsonElement>(totalLine);
-            totalRows = totalJson.GetProperty("totalRows").GetInt32();
+            throw new InvalidOperationException("Could not find total rows marker in stdout");
+        }
+
+        var jsonData = stdoutContent.Substring(0, markerIndex).Trim();
+        var afterMarker = stdoutContent.Substring(markerIndex + "___TOTAL_ROWS___".Length).Trim();
+        
+        // Parse total rows
+        var totalRows = 0;
+        var totalRowsMatch = System.Text.RegularExpressions.Regex.Match(afterMarker, @"^\s*(\d+)");
+        if (totalRowsMatch.Success)
+        {
+            totalRows = int.Parse(totalRowsMatch.Groups[1].Value);
+        }
+
+        // Parse JSON data
+        List<DatasetRow> rows = new();
+        
+        if (!string.IsNullOrWhiteSpace(jsonData))
+        {
+            try
+            {
+                // PROC JSON exports as an array of objects
+                var dataJson = JsonSerializer.Deserialize<JsonElement>(jsonData);
+                
+                if (dataJson.ValueKind == JsonValueKind.Array)
+                {
+                    rows = dataJson.EnumerateArray()
+                        .Select(row => {
+                            var cols = new Dictionary<string, string>();
+                            foreach (var prop in row.EnumerateObject())
+                            {
+                                cols[prop.Name] = prop.Value.ToString();
+                            }
+                            return new DatasetRow(cols);
+                        })
+                        .ToList();
+                }
+            }
+            catch (JsonException ex)
+            {
+                logger.LogError(ex, "Failed to parse JSON from stdout. Content: {Content}", jsonData);
+                throw new InvalidOperationException($"Failed to parse dataset JSON: {ex.Message}");
+            }
         }
 
         return new PagedResult<DatasetRow>(rows, totalRows, request.Page, request.PageSize);

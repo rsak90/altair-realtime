@@ -104,12 +104,12 @@
     }
 
     /**
-     * Navigates to the standalone dataset viewer page
+     * Opens the standalone dataset viewer page in a new tab
      * Requirements: 8.2, 8.4
      */
     function viewDataset(fileName) {
-        // Navigate to the standalone dataset viewer page
-        window.location.href = `/dataset-viewer/${encodeURIComponent(fileName)}`;
+        // Open the dataset viewer page in a new tab
+        window.open(`/dataset-viewer/${encodeURIComponent(fileName)}`, '_blank');
     }
 
     /**
