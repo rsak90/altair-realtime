@@ -14,6 +14,7 @@ namespace SasJobRunner.Controllers.Api;
 [Route("api/files")]
 public sealed class FilesApiController(
     ISessionJobOrchestrator orchestrator,
+    IConfiguration configuration,
     ILogger<FilesApiController> logger) : ControllerBase
 {
     /// <summary>
@@ -30,7 +31,10 @@ public sealed class FilesApiController(
         if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(sessionId))
             return BadRequest("UserId or SessionId not in session.");
 
-        var workingDir = $"/sas/sessions/{userId}/{sessionId}/";
+        // Use the configured StudyFolder to construct the correct path
+        var studyFolder = configuration["SessionStorage:StudyFolder"] 
+            ?? throw new InvalidOperationException("SessionStorage:StudyFolder configuration is required.");
+        var workingDir = Path.Combine(studyFolder.TrimEnd('/'), "sessions", userId, sessionId);
         
         if (!Directory.Exists(workingDir))
             return Ok(Array.Empty<DatasetFileInfo>());

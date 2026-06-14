@@ -27,7 +27,7 @@ public sealed class SseLogController(
             var startTime = DateTime.UtcNow;
             string status = "Running";
 
-            while (status != "Completed" && status != "Failed")
+            while (status != "CompletedSuccess" && status != "CompletedError" && status != "Failed")
             {
                 if (DateTime.UtcNow - startTime > maxWaitTime)
                 {

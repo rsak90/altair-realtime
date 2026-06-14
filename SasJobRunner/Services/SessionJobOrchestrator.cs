@@ -12,12 +12,24 @@ public sealed class SessionJobOrchestrator(
     LogParserService logParser,
     IHubContext<LogStreamingHub> signalrContext,
     IHttpContextAccessor contextAccessor,
+    IConfiguration configuration,
     ILogger<SessionJobOrchestrator> logger) : ISessionJobOrchestrator
 {
     public async Task<string> SubmitAsync(
         string userId, string sessionId, string userSourceCode,
         CancellationToken ct = default)
     {
+        // Ensure execution folder exists before submitting job
+        var studyFolder = configuration["SessionStorage:StudyFolder"] 
+            ?? throw new InvalidOperationException("SessionStorage:StudyFolder configuration is required.");
+        var executionFolder = Path.Combine(studyFolder.TrimEnd('/'), "sessions", userId, sessionId);
+        
+        if (!Directory.Exists(executionFolder))
+        {
+            logger.LogInformation("Creating execution folder: {ExecutionFolder}", executionFolder);
+            Directory.CreateDirectory(executionFolder);
+        }
+
         var macroVars = await macroVarStore.GetAsync(sessionId);
         var preamble  = preambleBuilder.Build(userId, sessionId, macroVars);
         var full = preamble + Environment.NewLine
