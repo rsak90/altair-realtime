@@ -104,34 +104,12 @@
     }
 
     /**
-     * Submits a dataset introspection job and subscribes to its log stream
+     * Navigates to the standalone dataset viewer page
      * Requirements: 8.2, 8.4
      */
     function viewDataset(fileName) {
-        currentDataset = fileName;
-        currentJobId = null;
-        currentSortColumn = null;
-        currentSortAscending = true;
-        currentPage = 1;
-
-        // Show modal with loading state
-        showModal("Loading dataset...", true);
-
-        fetch(`/api/files/${encodeURIComponent(fileName)}/view`, {
-            method: "POST"
-        })
-            .then(response => {
-                if (!response.ok) throw new Error("Failed to submit dataset view job");
-                return response.json();
-            })
-            .then(data => {
-                currentJobId = data.jobId;
-                subscribeToJob(data.jobId);
-            })
-            .catch(error => {
-                console.error("Error submitting dataset view job:", error);
-                showModal("Error: Failed to submit dataset view job", false);
-            });
+        // Navigate to the standalone dataset viewer page
+        window.location.href = `/dataset-viewer/${encodeURIComponent(fileName)}`;
     }
 
     /**

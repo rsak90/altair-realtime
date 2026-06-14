@@ -27,6 +27,7 @@ builder.Services.AddHttpClient<ITokenManager, TokenManager>(client =>
 
 // ── Scoped services ───────────────────────────────────────────────────────────
 builder.Services.AddScoped<ISessionJobOrchestrator, SessionJobOrchestrator>();
+builder.Services.AddScoped<IDatasetReaderService, DatasetReaderService>();
 builder.Services.AddScoped<PreambleBuilder>();
 builder.Services.AddScoped<LogParserService>();
 
