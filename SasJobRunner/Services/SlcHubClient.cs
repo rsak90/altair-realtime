@@ -20,8 +20,24 @@ public sealed class SlcHubClient(
     /// </summary>
     private void ApplyBearerToken()
     {
-        var token = contextAccessor.HttpContext!.Session.GetString("BearerToken")
-            ?? throw new InvalidOperationException("Bearer token not found in session.");
+        // Check if HttpContext is available (we're in an HTTP request context)
+        if (contextAccessor.HttpContext?.Session != null)
+        {
+            var token = contextAccessor.HttpContext.Session.GetString("BearerToken")
+                ?? throw new InvalidOperationException("Bearer token not found in session.");
+            httpClient.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", token);
+        }
+        // If HttpContext is null, assume the token was already set (background task scenario)
+        // and don't throw - the Authorization header should already be set from a previous call
+    }
+
+    /// <summary>
+    /// Explicitly sets the Bearer token for scenarios where HttpContext is not available
+    /// (e.g., background tasks, fire-and-forget operations).
+    /// </summary>
+    public void SetBearerToken(string token)
+    {
         httpClient.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", token);
     }

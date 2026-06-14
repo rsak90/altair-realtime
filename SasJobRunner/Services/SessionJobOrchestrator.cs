@@ -11,6 +11,7 @@ public sealed class SessionJobOrchestrator(
     IProgramHistoryStore historyStore,
     LogParserService logParser,
     IHubContext<LogStreamingHub> signalrContext,
+    IHttpContextAccessor contextAccessor,
     ILogger<SessionJobOrchestrator> logger) : ISessionJobOrchestrator
 {
     public async Task<string> SubmitAsync(
@@ -28,16 +29,26 @@ public sealed class SessionJobOrchestrator(
         // Commit job to start execution
         await hubClient.CommitJobAsync(jobId, ct);
 
+        // Capture bearer token from current HTTP context before background task
+        // This is necessary because StreamAndFinalizeAsync runs outside the HTTP request scope
+        var bearerToken = contextAccessor.HttpContext?.Session.GetString("BearerToken");
+
         // Fire-and-forget: poll status, fetch logs, parse vars, persist history
-        _ = StreamAndFinalizeAsync(userId, sessionId, jobId, userSourceCode, CancellationToken.None);
+        _ = StreamAndFinalizeAsync(userId, sessionId, jobId, userSourceCode, bearerToken, CancellationToken.None);
 
         return jobId;
     }
 
     private async Task StreamAndFinalizeAsync(
         string userId, string sessionId, string jobId,
-        string userSourceCode, CancellationToken ct)
+        string userSourceCode, string? bearerToken, CancellationToken ct)
     {
+        // Set bearer token for background task operations
+        if (!string.IsNullOrEmpty(bearerToken))
+        {
+            hubClient.SetBearerToken(bearerToken);
+        }
+
         var logLines = new List<string>();
         try
         {

@@ -48,6 +48,12 @@ public interface ISlcHubClient
     /// Throws <see cref="SlcHubException"/> on non-2xx response.
     /// </summary>
     Task<string> GetResultFileContentAsync(string fileUrl, CancellationToken ct = default);
+
+    /// <summary>
+    /// Explicitly sets the Bearer token for scenarios where HttpContext is not available
+    /// (e.g., background tasks, fire-and-forget operations).
+    /// </summary>
+    void SetBearerToken(string token);
 }
 
 /// <summary>
