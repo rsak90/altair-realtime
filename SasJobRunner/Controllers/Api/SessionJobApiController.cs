@@ -9,7 +9,6 @@ namespace SasJobRunner.Controllers.Api;
 /// POST /api/session-jobs
 /// </summary>
 [ApiController]
-[Route("api/session-jobs")]
 public sealed class SessionJobApiController(
     ISessionJobOrchestrator orchestrator,
     ILogger<SessionJobApiController> logger) : ControllerBase
@@ -18,7 +17,7 @@ public sealed class SessionJobApiController(
     /// Accepts a job submission request, delegates to <see cref="ISessionJobOrchestrator"/>,
     /// and returns the job identifier.
     /// </summary>
-    [HttpPost]
+    [HttpPost("api/session-jobs")]
     public async Task<IActionResult> SubmitJob(
         [FromBody] JobSubmitRequest request,
         CancellationToken ct)

@@ -9,12 +9,11 @@ namespace SasJobRunner.Controllers.Api;
 /// the complete log once the job reaches a terminal state.
 /// </summary>
 [ApiController]
-[Route("api/session-jobs")]
 public sealed class SseLogController(
     ISlcHubClient hubClient,
     ILogger<SseLogController> logger) : ControllerBase
 {
-    [HttpGet("{jobId}/log-stream")]
+    [HttpGet("api/session-jobs/{jobId}/log-stream")]
     public async Task StreamLog(string jobId, CancellationToken ct)
     {
         Response.ContentType = "text/event-stream";
