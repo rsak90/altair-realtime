@@ -34,8 +34,37 @@ public sealed class SessionJobApiController(
         }
         catch (SlcHubException ex)
         {
-            logger.LogWarning(ex, "SLC Hub returned non-success.");
-            return StatusCode(502, ex.Message);
+            logger.LogError(ex, "SLC Hub returned non-success: Status={StatusCode}, Message={Message}", 
+                ex.StatusCode, ex.Message);
+            return StatusCode(502, new { 
+                error = "SLC Hub Error", 
+                statusCode = ex.StatusCode,
+                detail = ex.Message 
+            });
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("Bearer token"))
+        {
+            logger.LogError(ex, "Bearer token issue: {Message}", ex.Message);
+            return StatusCode(401, new { 
+                error = "Authentication Error", 
+                detail = ex.Message 
+            });
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogError(ex, "Network error connecting to SLC Hub: {Message}", ex.Message);
+            return StatusCode(503, new { 
+                error = "Service Unavailable", 
+                detail = "Cannot connect to SLC Hub. Please check the configuration and network connectivity." 
+            });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error during job submission: {Message}", ex.Message);
+            return StatusCode(500, new { 
+                error = "Internal Server Error", 
+                detail = ex.Message 
+            });
         }
     }
 }

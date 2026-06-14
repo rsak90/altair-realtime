@@ -86,8 +86,28 @@
                             window.joinJob(jobId);
                         }
                     } else {
-                        const errorText = await response.text();
-                        showSubmitError(errorText || `HTTP ${response.status}`);
+                        let errorMessage = `HTTP ${response.status}`;
+                        
+                        try {
+                            const errorData = await response.json();
+                            if (errorData.error) {
+                                errorMessage = `${errorData.error}`;
+                                if (errorData.detail) {
+                                    errorMessage += `: ${errorData.detail}`;
+                                }
+                                if (errorData.statusCode) {
+                                    errorMessage += ` (Status: ${errorData.statusCode})`;
+                                }
+                            }
+                        } catch (e) {
+                            // If JSON parsing fails, try text
+                            const errorText = await response.text();
+                            if (errorText) {
+                                errorMessage = errorText;
+                            }
+                        }
+                        
+                        showSubmitError(errorMessage);
                     }
                 } catch (err) {
                     showSubmitError('Request failed: ' + err.message);
