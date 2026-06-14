@@ -11,13 +11,11 @@
     </div>
 
     <div class="viewer-toolbar">
-        <div class="filter-controls">
-            <button id="btn-add-filter" type="button">Add Filter</button>
-            <button id="btn-clear-filters" type="button">Clear All Filters</button>
-            <button id="btn-refresh" type="button">Refresh</button>
-            <button id="btn-export" type="button">Export (CSV)</button>
+        <div class="where-filter">
+            <label for="where-clause">WHERE</label>
+            <input type="text" id="where-clause" placeholder="Enter filter condition (e.g., age > 30 AND name CONTAINS 'John')" />
+            <button id="btn-apply" type="button">Apply</button>
         </div>
-        <div id="filter-container" class="filters-list"></div>
     </div>
 
     <div class="viewer-content">

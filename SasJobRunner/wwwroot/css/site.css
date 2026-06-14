@@ -936,3 +936,194 @@ button[type="submit"]:not(:disabled):hover {
     white-space: nowrap;
     border: 0;
 }
+
+/* --------------------------------------------------------------------------
+   18. Dataset Viewer Page - WHERE Clause Filter
+   -------------------------------------------------------------------------- */
+
+.dataset-viewer-page {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 52px - 3rem);
+    gap: 1rem;
+}
+
+.viewer-header {
+    flex-shrink: 0;
+}
+
+.viewer-header h1 {
+    margin-bottom: 0.5rem;
+}
+
+.info-bar {
+    display: flex;
+    gap: 1.5rem;
+    font-size: 0.85rem;
+    color: #6c757d;
+    padding: 0.5rem 0;
+}
+
+.viewer-toolbar {
+    flex-shrink: 0;
+    background-color: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 1rem;
+}
+
+.where-filter {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.where-filter label {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #495057;
+    flex-shrink: 0;
+}
+
+.where-filter input[type="text"] {
+    flex: 1;
+    font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+    font-size: 0.85rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+}
+
+.where-filter input[type="text"]:focus {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15);
+}
+
+.where-filter button {
+    flex-shrink: 0;
+    padding: 0.5rem 1.5rem;
+    background-color: #0d6efd;
+    color: #fff;
+    border: 1px solid #0d6efd;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.where-filter button:hover {
+    background-color: #0b5ed7;
+    border-color: #0a58ca;
+}
+
+.viewer-content {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.table-wrapper {
+    height: 100%;
+    overflow: auto;
+    background-color: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+}
+
+.loading-indicator {
+    text-align: center;
+    padding: 3rem;
+    color: #6c757d;
+    font-size: 1rem;
+}
+
+.error-message {
+    text-align: center;
+    padding: 2rem;
+    color: #dc3545;
+    background-color: #f8d7da;
+    border: 1px solid #f5c2c7;
+    border-radius: 6px;
+    margin: 1rem;
+}
+
+.no-data {
+    text-align: center;
+    padding: 3rem;
+    color: #6c757d;
+    font-style: italic;
+}
+
+.viewer-footer {
+    flex-shrink: 0;
+    background-color: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+}
+
+.pagination-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+}
+
+.page-info {
+    font-size: 0.85rem;
+    color: #495057;
+    margin: 0 0.5rem;
+}
+
+.page-size-select {
+    padding: 0.375rem 0.5rem;
+    font-size: 0.85rem;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    margin-left: 0.5rem;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.data-table thead {
+    background-color: #f1f3f5;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.data-table th {
+    padding: 0.55rem 0.875rem;
+    text-align: left;
+    font-weight: 600;
+    color: #495057;
+    border-bottom: 2px solid #dee2e6;
+    white-space: nowrap;
+}
+
+.data-table th a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.data-table th a:hover {
+    color: #0d6efd;
+}
+
+.data-table td {
+    padding: 0.45rem 0.875rem;
+    border-bottom: 1px solid #e9ecef;
+    color: #212529;
+    font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+    font-size: 0.8rem;
+}
+
+.data-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.data-table tbody tr:hover {
+    background-color: #f8f9fa;
+}

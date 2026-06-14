@@ -9,7 +9,7 @@
     let currentPageSize = 100;
     let currentSortColumn = null;
     let currentSortAscending = true;
-    let currentFilters = [];
+    let currentWhereClause = '';
 
     /**
      * Initialize the dataset viewer
@@ -43,12 +43,14 @@
         try {
             showLoading();
 
+            const filters = parseWhereClause(currentWhereClause);
+
             const request = {
                 page: currentPage,
                 pageSize: currentPageSize,
                 sortColumn: currentSortColumn,
                 sortAscending: currentSortAscending,
-                filters: currentFilters.length > 0 ? currentFilters : null
+                filters: filters.length > 0 ? filters : null
             };
 
             const response = await fetch(`/api/files/${encodeURIComponent(window.datasetName)}/data`, {
@@ -64,7 +66,7 @@
             renderPagination(result);
         } catch (error) {
             console.error("Error loading data:", error);
-            showError("Failed to load dataset data");
+            showError("Failed to load dataset data: " + error.message);
         }
     }
 
@@ -224,159 +226,149 @@
      * Setup event handlers
      */
     function setupEventHandlers() {
-        const btnAddFilter = document.getElementById('btn-add-filter');
-        if (btnAddFilter) {
-            btnAddFilter.addEventListener('click', addFilter);
+        const btnApply = document.getElementById('btn-apply');
+        if (btnApply) {
+            btnApply.addEventListener('click', applyWhereClause);
         }
 
-        const btnClearFilters = document.getElementById('btn-clear-filters');
-        if (btnClearFilters) {
-            btnClearFilters.addEventListener('click', clearFilters);
-        }
-
-        const btnRefresh = document.getElementById('btn-refresh');
-        if (btnRefresh) {
-            btnRefresh.addEventListener('click', () => loadData());
-        }
-
-        const btnExport = document.getElementById('btn-export');
-        if (btnExport) {
-            btnExport.addEventListener('click', exportToCSV);
-        }
-    }
-
-    /**
-     * Add a new filter row
-     */
-    function addFilter() {
-        if (!metadata) return;
-
-        const filterContainer = document.getElementById('filter-container');
-        if (!filterContainer) return;
-
-        const filterId = `filter-${Date.now()}`;
-        const filterDiv = document.createElement('div');
-        filterDiv.className = 'filter-row';
-        filterDiv.id = filterId;
-
-        let html = '<select class="filter-column">';
-        metadata.columns.forEach(col => {
-            html += `<option value="${escapeHtml(col.name)}">${escapeHtml(col.name)} (${col.type})</option>`;
-        });
-        html += '</select>';
-
-        html += `<select class="filter-operator">
-            <option value="equals">Equals</option>
-            <option value="contains">Contains</option>
-            <option value="startswith">Starts With</option>
-            <option value="endswith">Ends With</option>
-            <option value="gt">Greater Than</option>
-            <option value="lt">Less Than</option>
-            <option value="gte">Greater or Equal</option>
-            <option value="lte">Less or Equal</option>
-        </select>`;
-
-        html += '<input type="text" class="filter-value" placeholder="Value">';
-        html += '<button type="button" class="btn-apply-filter">Apply</button>';
-        html += '<button type="button" class="btn-remove-filter">Remove</button>';
-
-        filterDiv.innerHTML = html;
-        filterContainer.appendChild(filterDiv);
-
-        // Attach handlers
-        filterDiv.querySelector('.btn-apply-filter').addEventListener('click', applyFilters);
-        filterDiv.querySelector('.btn-remove-filter').addEventListener('click', function () {
-            filterDiv.remove();
-            applyFilters();
-        });
-    }
-
-    /**
-     * Apply all current filters
-     */
-    function applyFilters() {
-        const filterContainer = document.getElementById('filter-container');
-        if (!filterContainer) return;
-
-        currentFilters = [];
-
-        filterContainer.querySelectorAll('.filter-row').forEach(row => {
-            const column = row.querySelector('.filter-column')?.value;
-            const operator = row.querySelector('.filter-operator')?.value;
-            const value = row.querySelector('.filter-value')?.value;
-
-            if (column && operator && value) {
-                currentFilters.push({
-                    columnName: column,
-                    operator: operator,
-                    value: value
-                });
-            }
-        });
-
-        currentPage = 1; // Reset to first page
-        loadData();
-    }
-
-    /**
-     * Clear all filters
-     */
-    function clearFilters() {
-        const filterContainer = document.getElementById('filter-container');
-        if (filterContainer) {
-            filterContainer.innerHTML = '';
-        }
-        currentFilters = [];
-        currentPage = 1;
-        loadData();
-    }
-
-    /**
-     * Export current view to CSV
-     */
-    async function exportToCSV() {
-        try {
-            // Fetch all data with current filters (up to 10,000 rows)
-            const request = {
-                page: 1,
-                pageSize: 10000,
-                sortColumn: currentSortColumn,
-                sortAscending: currentSortAscending,
-                filters: currentFilters.length > 0 ? currentFilters : null
-            };
-
-            const response = await fetch(`/api/files/${encodeURIComponent(window.datasetName)}/data`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(request)
+        const whereInput = document.getElementById('where-clause');
+        if (whereInput) {
+            whereInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    applyWhereClause();
+                }
             });
+        }
+    }
 
-            if (!response.ok) throw new Error("Failed to fetch data for export");
+    /**
+     * Apply WHERE clause filter
+     */
+    function applyWhereClause() {
+        const whereInput = document.getElementById('where-clause');
+        if (whereInput) {
+            currentWhereClause = whereInput.value.trim();
+            currentPage = 1; // Reset to first page
+            loadData();
+        }
+    }
+
+    /**
+     * Parse WHERE clause into filter objects
+     * Supports conditions like: age > 30, name CONTAINS 'John', status = 'Active'
+     * Multiple conditions can be joined with AND
+     */
+    function parseWhereClause(whereClause) {
+        if (!whereClause) return [];
+
+        const filters = [];
+        
+        // Split by AND (case insensitive)
+        const conditions = whereClause.split(/\s+AND\s+/i);
+
+        conditions.forEach(condition => {
+            condition = condition.trim();
+            if (!condition) return;
+
+            // Try to parse the condition
+            // Patterns supported:
+            // column operator value
+            // Examples: age > 30, name = 'John', status CONTAINS 'Active'
             
-            const result = await response.json();
-
-            // Generate CSV
-            const columns = metadata.columns.map(col => col.name);
-            let csv = columns.map(col => `"${col}"`).join(',') + '\n';
-
-            result.items.forEach(row => {
-                const values = columns.map(col => {
-                    const value = row.columns[col] || '';
-                    return `"${String(value).replace(/"/g, '""')}"`;
+            let match;
+            
+            // CONTAINS operator
+            match = condition.match(/^(\w+)\s+CONTAINS\s+['"](.*?)['"]$/i);
+            if (match) {
+                filters.push({
+                    columnName: match[1],
+                    operator: 'contains',
+                    value: match[2]
                 });
-                csv += values.join(',') + '\n';
-            });
+                return;
+            }
 
-            // Download
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `${window.datasetName}_${new Date().toISOString().slice(0, 10)}.csv`;
-            link.click();
-        } catch (error) {
-            console.error("Error exporting CSV:", error);
-            alert("Failed to export CSV");
-        }
+            // STARTS WITH operator
+            match = condition.match(/^(\w+)\s+STARTS\s+WITH\s+['"](.*?)['"]$/i);
+            if (match) {
+                filters.push({
+                    columnName: match[1],
+                    operator: 'startswith',
+                    value: match[2]
+                });
+                return;
+            }
+
+            // ENDS WITH operator
+            match = condition.match(/^(\w+)\s+ENDS\s+WITH\s+['"](.*?)['"]$/i);
+            if (match) {
+                filters.push({
+                    columnName: match[1],
+                    operator: 'endswith',
+                    value: match[2]
+                });
+                return;
+            }
+
+            // >= operator
+            match = condition.match(/^(\w+)\s*>=\s*(.+)$/);
+            if (match) {
+                filters.push({
+                    columnName: match[1],
+                    operator: 'gte',
+                    value: match[2].replace(/['"]/g, '')
+                });
+                return;
+            }
+
+            // <= operator
+            match = condition.match(/^(\w+)\s*<=\s*(.+)$/);
+            if (match) {
+                filters.push({
+                    columnName: match[1],
+                    operator: 'lte',
+                    value: match[2].replace(/['"]/g, '')
+                });
+                return;
+            }
+
+            // > operator
+            match = condition.match(/^(\w+)\s*>\s*(.+)$/);
+            if (match) {
+                filters.push({
+                    columnName: match[1],
+                    operator: 'gt',
+                    value: match[2].replace(/['"]/g, '')
+                });
+                return;
+            }
+
+            // < operator
+            match = condition.match(/^(\w+)\s*<\s*(.+)$/);
+            if (match) {
+                filters.push({
+                    columnName: match[1],
+                    operator: 'lt',
+                    value: match[2].replace(/['"]/g, '')
+                });
+                return;
+            }
+
+            // = operator
+            match = condition.match(/^(\w+)\s*=\s*(.+)$/);
+            if (match) {
+                filters.push({
+                    columnName: match[1],
+                    operator: 'equals',
+                    value: match[2].replace(/['"]/g, '')
+                });
+                return;
+            }
+
+            console.warn('Could not parse condition:', condition);
+        });
+
+        return filters;
     }
 
     /**
