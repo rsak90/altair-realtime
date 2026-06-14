@@ -5,6 +5,7 @@ namespace SasJobRunner.ViewModels;
 public class DatasetViewModel
 {
     public string? SessionId { get; init; }
+    public string? DatasetName { get; init; }
     public IReadOnlyList<string> AvailableDatasets { get; init; } = [];
     public string? SelectedDataset { get; init; }
     public PagedResult<DatasetRow>? PagedData { get; init; }

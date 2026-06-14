@@ -1,0 +1,40 @@
+@model SasJobRunner.ViewModels.DatasetViewModel
+@{
+    ViewData["Title"] = $"Dataset Viewer - {Model.DatasetName}";
+    Layout = "_Layout";
+}
+
+<div class="dataset-viewer-page">
+    <div class="viewer-header">
+        <h1>@Model.DatasetName</h1>
+        <div id="dataset-info" class="info-bar"></div>
+    </div>
+
+    <div class="viewer-toolbar">
+        <div class="filter-controls">
+            <button id="btn-add-filter" type="button">Add Filter</button>
+            <button id="btn-clear-filters" type="button">Clear All Filters</button>
+            <button id="btn-refresh" type="button">Refresh</button>
+            <button id="btn-export" type="button">Export (CSV)</button>
+        </div>
+        <div id="filter-container" class="filters-list"></div>
+    </div>
+
+    <div class="viewer-content">
+        <div id="table-container" class="table-wrapper">
+            <div class="loading-indicator">Loading dataset...</div>
+        </div>
+    </div>
+
+    <div class="viewer-footer">
+        <div id="pagination-container" class="pagination-controls"></div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        window.datasetName = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.DatasetName));
+        window.sessionId = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.SessionId));
+    </script>
+    <script src="~/js/dataset-viewer.js" asp-append-version="true"></script>
+}

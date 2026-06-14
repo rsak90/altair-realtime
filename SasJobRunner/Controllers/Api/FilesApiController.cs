@@ -1,12 +1,16 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
+using SasJobRunner.Hubs;
 using SasJobRunner.Models;
 using SasJobRunner.Services;
 
 namespace SasJobRunner.Controllers.Api;
 
 /// <summary>
-/// API controller for working dataset file browsing.
+/// API controller for working dataset file browsing and viewing.
 /// GET /api/files — list all .sas7bdat files in session working directory
+/// GET /api/files/{fileName}/metadata — get dataset metadata
+/// POST /api/files/{fileName}/data — get dataset rows with filtering
 /// POST /api/files/{fileName}/view — submit introspection job for a dataset
 /// Requirements: 8.1, 8.2, 8.4, 8.10
 /// </summary>
@@ -14,7 +18,9 @@ namespace SasJobRunner.Controllers.Api;
 [Route("api/files")]
 public sealed class FilesApiController(
     ISessionJobOrchestrator orchestrator,
+    IDatasetReaderService datasetReader,
     IConfiguration configuration,
+    IHubContext<LogStreamingHub> hubContext,
     ILogger<FilesApiController> logger) : ControllerBase
 {
     /// <summary>
@@ -60,6 +66,67 @@ public sealed class FilesApiController(
         {
             logger.LogError(ex, "Error listing dataset files in {WorkingDir}", workingDir);
             return StatusCode(500, "Failed to list dataset files.");
+        }
+    }
+
+    /// <summary>
+    /// Gets metadata about a dataset including columns, row count, etc.
+    /// </summary>
+    [HttpGet("{fileName}/metadata")]
+    public async Task<IActionResult> GetMetadata(
+        string fileName,
+        CancellationToken ct)
+    {
+        var userId = HttpContext.Session.GetString("UserId");
+        var sessionId = HttpContext.Session.GetString("SessionId");
+
+        if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(sessionId))
+            return BadRequest("UserId or SessionId not in session.");
+
+        // Validate fileName to prevent injection
+        if (!System.Text.RegularExpressions.Regex.IsMatch(fileName, @"^[A-Za-z_][A-Za-z0-9_]*$"))
+            return BadRequest("Invalid dataset file name.");
+
+        try
+        {
+            var metadata = await datasetReader.GetMetadataAsync(userId, sessionId, fileName, ct);
+            return Ok(metadata);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error getting metadata for dataset {FileName}", fileName);
+            return StatusCode(500, new { error = "Failed to get dataset metadata", detail = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Gets dataset rows with optional filtering, sorting, and pagination
+    /// </summary>
+    [HttpPost("{fileName}/data")]
+    public async Task<IActionResult> GetData(
+        string fileName,
+        [FromBody] DatasetFilterRequest request,
+        CancellationToken ct)
+    {
+        var userId = HttpContext.Session.GetString("UserId");
+        var sessionId = HttpContext.Session.GetString("SessionId");
+
+        if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(sessionId))
+            return BadRequest("UserId or SessionId not in session.");
+
+        // Validate fileName to prevent injection
+        if (!System.Text.RegularExpressions.Regex.IsMatch(fileName, @"^[A-Za-z_][A-Za-z0-9_]*$"))
+            return BadRequest("Invalid dataset file name.");
+
+        try
+        {
+            var result = await datasetReader.GetRowsAsync(userId, sessionId, fileName, request, ct);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error getting data for dataset {FileName}", fileName);
+            return StatusCode(500, new { error = "Failed to get dataset data", detail = ex.Message });
         }
     }
 

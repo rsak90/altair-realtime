@@ -1,45 +1,45 @@
 /**
  * file-browser.js
- * Working Dataset File Browser
+ * Working Dataset File Browser with Real-time Updates
  * Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8, 8.9
  */
 
 (function () {
-    let currentJobId = null;
-    let currentDataset = null;
-    let currentSortColumn = null;
-    let currentSortAscending = true;
-    let currentPage = 1;
-    const rowsPerPage = 100;
-
     /**
      * Initializes the file browser and sets up event handlers
      */
     function init() {
         refreshFileList();
         
-        // Listen for JobComplete events to refresh file list
+        // Subscribe to file change notifications via SignalR
         if (window.logViewerHub && window.logViewerHub.connection) {
-            window.logViewerHub.connection.on("JobComplete", function () {
+            const connection = window.logViewerHub.connection;
+            
+            // Get session ID from editor container
+            const editorContainer = document.getElementById("editor-container");
+            const sessionId = editorContainer?.getAttribute("data-session-id");
+            
+            if (sessionId) {
+                // Join session group for file change notifications
+                connection.invoke("JoinSession", sessionId).catch(err => {
+                    console.error("Error joining session group:", err);
+                });
+
+                // Listen for file changes
+                connection.on("FilesChanged", function () {
+                    console.log("Files changed, refreshing file list...");
+                    refreshFileList();
+                });
+            }
+
+            // Also refresh on job complete
+            connection.on("JobComplete", function () {
                 refreshFileList();
             });
         }
 
-        // Setup modal close handlers
-        const modal = document.getElementById("dataset-viewer-modal");
-        if (modal) {
-            const closeBtn = modal.querySelector(".modal-close");
-            if (closeBtn) {
-                closeBtn.addEventListener("click", closeModal);
-            }
-            
-            // Close on overlay click
-            modal.addEventListener("click", function (e) {
-                if (e.target === modal) {
-                    closeModal();
-                }
-            });
-        }
+        // Refresh file list every 30 seconds as a fallback
+        setInterval(refreshFileList, 30000);
     }
 
     /**

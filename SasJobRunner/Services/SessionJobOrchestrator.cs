@@ -197,6 +197,13 @@ public sealed class SessionJobOrchestrator(
             await historyStore.AddAsync(new ProgramHistoryRecord(
                 Guid.NewGuid().ToString(), userId, sessionId,
                 DateTime.UtcNow, userSourceCode, summary, datasets));
+
+            // Notify clients that files may have changed
+            if (datasets.Count > 0)
+            {
+                await signalrContext.Clients.Group($"session_{sessionId}")
+                    .SendAsync("FilesChanged", ct);
+            }
         }
         catch (Exception ex)
         {
