@@ -36,6 +36,7 @@ public sealed class TokenManager(
         session.SetString("BearerToken", userToken);
         session.SetInt32("BearerTokenExpiresIn", 3600); // assume 1 hour
         session.SetString("BearerTokenAcquiredAt", DateTime.UtcNow.ToString("O"));
+        session.SetString("UserId", userId);
 
         return userToken;
     }
