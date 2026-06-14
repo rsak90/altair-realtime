@@ -5,7 +5,11 @@ using SasJobRunner.ViewModels;
 
 namespace SasJobRunner.Controllers;
 
-public class SessionController(IProgramHistoryStore historyStore, IMacroVarStore macroVarStore) : Controller
+public class SessionController(
+    IProgramHistoryStore historyStore, 
+    IMacroVarStore macroVarStore,
+    IConfiguration configuration,
+    ILogger<SessionController> logger) : Controller
 {
     [HttpGet("/Session")]
     public async Task<IActionResult> Index()
@@ -44,7 +48,26 @@ public class SessionController(IProgramHistoryStore historyStore, IMacroVarStore
         var userId = HttpContext.Session.GetString("UserId") ?? string.Empty;
         var sessionId = Guid.NewGuid().ToString();
 
-        Directory.CreateDirectory($"/sas/sessions/{userId}/{sessionId}/");
+        try
+        {
+            // Use the configured StudyFolder to construct the correct path
+            var studyFolder = configuration["SessionStorage:StudyFolder"];
+            if (!string.IsNullOrEmpty(studyFolder))
+            {
+                var sessionPath = Path.Combine(studyFolder.TrimEnd('/'), "sessions", userId, sessionId);
+                Directory.CreateDirectory(sessionPath);
+                logger.LogInformation("Created new session directory: {SessionPath}", sessionPath);
+            }
+            else
+            {
+                logger.LogWarning("SessionStorage:StudyFolder not configured");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to create session directory for UserId: {UserId}, SessionId: {SessionId}", userId, sessionId);
+        }
+
         HttpContext.Session.SetString("SessionId", sessionId);
 
         return RedirectToAction("Index", "Editor");

@@ -31,22 +31,37 @@ public sealed class FilesApiController(
     [HttpGet]
     public IActionResult ListFiles()
     {
-        var userId = HttpContext.Session.GetString("UserId");
-        var sessionId = HttpContext.Session.GetString("SessionId");
-
-        if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(sessionId))
-            return BadRequest("UserId or SessionId not in session.");
-
-        // Use the configured StudyFolder to construct the correct path
-        var studyFolder = configuration["SessionStorage:StudyFolder"] 
-            ?? throw new InvalidOperationException("SessionStorage:StudyFolder configuration is required.");
-        var workingDir = Path.Combine(studyFolder.TrimEnd('/'), "sessions", userId, sessionId);
-        
-        if (!Directory.Exists(workingDir))
-            return Ok(Array.Empty<DatasetFileInfo>());
-
         try
         {
+            var userId = HttpContext.Session.GetString("UserId");
+            var sessionId = HttpContext.Session.GetString("SessionId");
+
+            logger.LogInformation("ListFiles called - UserId: {UserId}, SessionId: {SessionId}", 
+                userId ?? "(null)", sessionId ?? "(null)");
+
+            if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(sessionId))
+            {
+                logger.LogWarning("ListFiles failed: UserId or SessionId not in session");
+                return BadRequest(new { error = "Session not initialized", detail = "UserId or SessionId not found in session. Please refresh the page." });
+            }
+
+            // Use the configured StudyFolder to construct the correct path
+            var studyFolder = configuration["SessionStorage:StudyFolder"];
+            if (string.IsNullOrEmpty(studyFolder))
+            {
+                logger.LogError("SessionStorage:StudyFolder configuration is missing");
+                return StatusCode(500, new { error = "Configuration error", detail = "SessionStorage:StudyFolder is not configured." });
+            }
+
+            var workingDir = Path.Combine(studyFolder.TrimEnd('/'), "sessions", userId, sessionId);
+            logger.LogInformation("Checking working directory: {WorkingDir}", workingDir);
+            
+            if (!Directory.Exists(workingDir))
+            {
+                logger.LogInformation("Working directory does not exist: {WorkingDir}", workingDir);
+                return Ok(Array.Empty<DatasetFileInfo>());
+            }
+
             var files = Directory.GetFiles(workingDir, "*.sas7bdat", SearchOption.TopDirectoryOnly)
                 .Select(path =>
                 {
@@ -60,12 +75,13 @@ public sealed class FilesApiController(
                 .OrderBy(f => f.Name)
                 .ToList();
 
+            logger.LogInformation("Found {FileCount} dataset files in {WorkingDir}", files.Count, workingDir);
             return Ok(files);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error listing dataset files in {WorkingDir}", workingDir);
-            return StatusCode(500, "Failed to list dataset files.");
+            logger.LogError(ex, "Unexpected error in ListFiles");
+            return StatusCode(500, new { error = "Failed to list dataset files", detail = ex.Message });
         }
     }
 
