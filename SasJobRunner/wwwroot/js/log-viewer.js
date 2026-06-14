@@ -6,41 +6,54 @@
 
 // jobId is set externally by joinJob() (called from editor.js after job submission)
 let jobId = null;
+let connection = null;
 
 const logContainer = document.getElementById('log-container');
 const jumpToErrorBtn = document.getElementById('btn-jump-error');
 
 // ── SignalR connection ───────────────────────────────────────────────────────
 
-const connection = new signalR.HubConnectionBuilder()
-    .withUrl('/hubs/log')
-    .withAutomaticReconnect()
-    .build();
+// Initialize SignalR connection only when available
+function initializeSignalR() {
+    if (typeof signalR === 'undefined') {
+        console.warn('SignalR library not loaded, using SSE fallback only');
+        return null;
+    }
 
-// Handle incoming log lines
-connection.on('ReceiveLog', appendLine);
+    const conn = new signalR.HubConnectionBuilder()
+        .withUrl('/hubs/log')
+        .withAutomaticReconnect()
+        .build();
 
-// Handle job completion
-connection.on('JobComplete', () => markJobDone());
+    return conn;
+}
 
-// Handle job error
-connection.on('JobError', msg => markJobError(msg));
+connection = initializeSignalR();
 
-// Start the connection; fall back to SSE if SignalR is unavailable
-connection.start()
-    .then(() => {
-        if (jobId) {
-            connection.invoke('JoinJob', jobId).catch(err => {
-                console.error('SignalR JoinJob failed:', err);
-            });
-        }
-    })
-    .catch(err => {
-        console.warn('SignalR unavailable, falling back to SSE:', err);
-        if (jobId) {
-            startSseFallback(jobId);
-        }
-    });
+connection = initializeSignalR();
+
+// Handle incoming log lines, job completion, and errors only if connection exists
+if (connection) {
+    connection.on('ReceiveLog', appendLine);
+    connection.on('JobComplete', () => markJobDone());
+    connection.on('JobError', msg => markJobError(msg));
+
+    // Start the connection; fall back to SSE if SignalR is unavailable
+    connection.start()
+        .then(() => {
+            if (jobId) {
+                connection.invoke('JoinJob', jobId).catch(err => {
+                    console.error('SignalR JoinJob failed:', err);
+                });
+            }
+        })
+        .catch(err => {
+            console.warn('SignalR unavailable, falling back to SSE:', err);
+            if (jobId) {
+                startSseFallback(jobId);
+            }
+        });
+}
 
 // ── SSE fallback ─────────────────────────────────────────────────────────────
 
@@ -150,6 +163,12 @@ function joinJob(id) {
         logContainer.innerHTML = '';
     }
     updateJumpToError();
+
+    // If no SignalR connection, use SSE directly
+    if (!connection) {
+        startSseFallback(id);
+        return;
+    }
 
     if (connection.state === signalR.HubConnectionState.Connected) {
         connection.invoke('JoinJob', id).catch(err => {
