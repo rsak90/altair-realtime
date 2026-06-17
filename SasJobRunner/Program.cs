@@ -1,19 +1,37 @@
 using SasJobRunner.Filters;
 using SasJobRunner.Hubs;
 using SasJobRunner.Services;
+using Serilog;
 
-var builder = WebApplication.CreateBuilder(args);
+// Configure Serilog for file logging
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Debug()
+    .WriteTo.Console()
+    .WriteTo.File(
+        path: "logs/sasjobrunner-.log",
+        rollingInterval: RollingInterval.Day,
+        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
+    .CreateLogger();
 
-// ── Session ──────────────────────────────────────────────────────────────────
-builder.Services.AddDistributedMemoryCache();
-builder.Services.AddSession(options =>
+try
 {
-    options.IdleTimeout = TimeSpan.FromHours(8);
-    options.Cookie.HttpOnly = true;
-    options.Cookie.IsEssential = true;
-    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
-});
-builder.Services.AddHttpContextAccessor();
+    Log.Information("Starting SAS Job Runner application");
+
+    var builder = WebApplication.CreateBuilder(args);
+
+    // Use Serilog for logging
+    builder.Host.UseSerilog();
+
+    // ── Session ──────────────────────────────────────────────────────────────────
+    builder.Services.AddDistributedMemoryCache();
+    builder.Services.AddSession(options =>
+    {
+        options.IdleTimeout = TimeSpan.FromHours(8);
+        options.Cookie.HttpOnly = true;
+        options.Cookie.IsEssential = true;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    });
+    builder.Services.AddHttpContextAccessor();
 
 // ── Typed HttpClient ──────────────────────────────────────────────────────────
 builder.Services.AddHttpClient<ISlcHubClient, SlcHubClient>(client =>
@@ -87,7 +105,17 @@ app.MapControllerRoute(
     pattern: "{controller=Home}/{action=Index}/{id?}")
     .WithStaticAssets();
 
-app.Run();
+    Log.Information("SAS Job Runner application started successfully");
+    app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Application terminated unexpectedly");
+}
+finally
+{
+    Log.CloseAndFlush();
+}
 
 // Make Program accessible for testing
 public partial class Program { }

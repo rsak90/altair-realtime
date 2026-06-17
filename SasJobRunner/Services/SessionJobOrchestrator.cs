@@ -193,6 +193,15 @@ public sealed class SessionJobOrchestrator(
             await signalrContext.Clients.Group(jobId)
                 .SendAsync("JobComplete", ct);
 
+            // Debug: Log the entire log content for inspection
+            logger.LogDebug("Job {JobId}: Complete log content ({LineCount} lines):", jobId, logLines.Count);
+            logger.LogDebug("==================== START LOG ====================");
+            foreach (var line in logLines)
+            {
+                logger.LogDebug("{Line}", line);
+            }
+            logger.LogDebug("==================== END LOG ====================");
+
             // Parse and persist macro variables
             var newVars = logParser.ParseUserMacroVars(logLines);
             logger.LogInformation("Job {JobId}: Parsed {Count} macro variables from {TotalLines} log lines", 
@@ -201,28 +210,34 @@ public sealed class SessionJobOrchestrator(
             // Log first 10 and last 10 lines for debugging
             if (newVars.Count == 0 && logLines.Count > 0)
             {
-                logger.LogDebug("Job {JobId}: First 10 log lines:", jobId);
-                foreach (var line in logLines.Take(10))
+                logger.LogInformation("Job {JobId}: No variables parsed. First 5 log lines:", jobId);
+                foreach (var line in logLines.Take(5))
                 {
-                    logger.LogDebug("  {Line}", line);
+                    logger.LogInformation("  >>> {Line}", line);
                 }
                 
-                logger.LogDebug("Job {JobId}: Last 10 log lines:", jobId);
-                foreach (var line in logLines.TakeLast(10))
+                logger.LogInformation("Job {JobId}: Last 5 log lines:", jobId);
+                foreach (var line in logLines.TakeLast(5))
                 {
-                    logger.LogDebug("  {Line}", line);
+                    logger.LogInformation("  >>> {Line}", line);
                 }
             }
             
             if (newVars.Count > 0)
             {
+                logger.LogInformation("Job {JobId}: Parsed variables:", jobId);
+                foreach (var (name, value) in newVars)
+                {
+                    logger.LogInformation("  {Name} = {Value}", name, value);
+                }
+                
                 logger.LogDebug("Job {JobId}: Calling SetAsync to persist {Count} variables for session {SessionId}", 
                     jobId, newVars.Count, sessionId);
                 await macroVarStore.SetAsync(sessionId, newVars);
             }
             else
             {
-                logger.LogDebug("Job {JobId}: No macro variables to persist for session {SessionId}", jobId, sessionId);
+                logger.LogWarning("Job {JobId}: No macro variables to persist for session {SessionId}. This might indicate the log is not being parsed correctly.", jobId, sessionId);
             }
 
             // Persist program history
