@@ -30,6 +30,13 @@ public sealed class SessionJobOrchestrator(
             Directory.CreateDirectory(executionFolder);
         }
 
+        // Register session with userId before GetAsync to enable immediate userId resolution
+        // This avoids the need for filesystem scanning when MacroVarStore needs to construct file paths
+        if (macroVarStore is MacroVarStore concreteStore)
+        {
+            concreteStore.RegisterSession(sessionId, userId);
+        }
+
         var macroVars = await macroVarStore.GetAsync(sessionId);
         var preamble  = preambleBuilder.Build(userId, sessionId, macroVars);
         var full = preamble + Environment.NewLine
