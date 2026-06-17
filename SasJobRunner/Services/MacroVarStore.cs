@@ -68,12 +68,15 @@ public sealed class MacroVarStore : IMacroVarStore
         var variableCopy = new Dictionary<string, string>(vars);
         _store[sessionId] = variableCopy;
 
+        _logger.LogDebug("SetAsync called for session {SessionId} with {Count} variables", sessionId, vars.Count);
+
         // Try to resolve userId from cache or file system (Req 8.3)
         // TryResolveUserId will cache the sessionId-to-userId mapping in _sessionToUser
         var userId = TryResolveUserId(sessionId);
         
         if (userId != null)
         {
+            _logger.LogDebug("SetAsync: userId resolved to {UserId} for session {SessionId}, initiating file write", userId, sessionId);
             // Fire-and-forget background write to file (async)
             _ = Task.Run(async () =>
             {
@@ -235,6 +238,9 @@ public sealed class MacroVarStore : IMacroVarStore
     /// <param name="variables">The macro variables to persist</param>
     private async Task WriteToFileAsync(string sessionId, string userId, Dictionary<string, string> variables)
     {
+        _logger.LogDebug("WriteToFileAsync called for session {SessionId}, user {UserId} with {Count} variables", 
+            sessionId, userId, variables.Count);
+
         // Early exit if StudyFolder is not configured
         if (string.IsNullOrWhiteSpace(_studyFolder))
         {

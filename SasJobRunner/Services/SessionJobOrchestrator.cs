@@ -195,8 +195,18 @@ public sealed class SessionJobOrchestrator(
 
             // Parse and persist macro variables
             var newVars = logParser.ParseUserMacroVars(logLines);
+            logger.LogInformation("Job {JobId}: Parsed {Count} macro variables from logs", jobId, newVars.Count);
+            
             if (newVars.Count > 0)
+            {
+                logger.LogDebug("Job {JobId}: Calling SetAsync to persist {Count} variables for session {SessionId}", 
+                    jobId, newVars.Count, sessionId);
                 await macroVarStore.SetAsync(sessionId, newVars);
+            }
+            else
+            {
+                logger.LogDebug("Job {JobId}: No macro variables to persist for session {SessionId}", jobId, sessionId);
+            }
 
             // Persist program history
             var summary  = LogParserService.Summarize(logLines);
