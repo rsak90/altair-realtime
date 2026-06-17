@@ -46,7 +46,7 @@ public class SessionController(
     public IActionResult New()
     {
         var userId = HttpContext.Session.GetString("UserId") ?? string.Empty;
-        var sessionId = Guid.NewGuid().ToString();
+        var sessionId = SessionIdGenerator.Generate();
 
         try
         {

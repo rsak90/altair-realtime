@@ -17,7 +17,7 @@ public class EditorController(IConfiguration configuration, ILogger<EditorContro
         // If user doesn't have an active session, create one automatically
         if (string.IsNullOrEmpty(sessionId) && !string.IsNullOrEmpty(userId))
         {
-            sessionId = Guid.NewGuid().ToString();
+            sessionId = SessionIdGenerator.Generate();
             
             try
             {
