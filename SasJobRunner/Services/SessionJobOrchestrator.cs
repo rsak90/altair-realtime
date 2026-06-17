@@ -195,7 +195,24 @@ public sealed class SessionJobOrchestrator(
 
             // Parse and persist macro variables
             var newVars = logParser.ParseUserMacroVars(logLines);
-            logger.LogInformation("Job {JobId}: Parsed {Count} macro variables from logs", jobId, newVars.Count);
+            logger.LogInformation("Job {JobId}: Parsed {Count} macro variables from {TotalLines} log lines", 
+                jobId, newVars.Count, logLines.Count);
+            
+            // Log first 10 and last 10 lines for debugging
+            if (newVars.Count == 0 && logLines.Count > 0)
+            {
+                logger.LogDebug("Job {JobId}: First 10 log lines:", jobId);
+                foreach (var line in logLines.Take(10))
+                {
+                    logger.LogDebug("  {Line}", line);
+                }
+                
+                logger.LogDebug("Job {JobId}: Last 10 log lines:", jobId);
+                foreach (var line in logLines.TakeLast(10))
+                {
+                    logger.LogDebug("  {Line}", line);
+                }
+            }
             
             if (newVars.Count > 0)
             {
