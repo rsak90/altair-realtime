@@ -43,6 +43,11 @@ public sealed class SessionJobOrchestrator(
                  + userSourceCode + Environment.NewLine
                  + "%put _user_;";
 
+        logger.LogDebug("Submitting job with code:");
+        logger.LogDebug("=== CODE START ===");
+        logger.LogDebug("{Code}", full);
+        logger.LogDebug("=== CODE END ===");
+
         // Create job draft
         var jobId = await hubClient.CreateJobAsync(full, ct);
         // Commit job to start execution
