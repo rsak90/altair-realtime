@@ -38,12 +38,17 @@ public sealed class LogParserService
             
             var trimmed = line.TrimStart();
             
-            // Look for the start of the _user_ block (SESSIONID= line or GLOBAL SESSIONID)
-            if (trimmed.StartsWith("SESSIONID=", StringComparison.OrdinalIgnoreCase) ||
-                trimmed.StartsWith("GLOBAL SESSIONID", StringComparison.OrdinalIgnoreCase))
+            // Look for the start of the _user_ block
+            // Start on SESSIONID or any GLOBAL variable line
+            if (!inBlock)
             {
-                inBlock = true;
-                Console.WriteLine($"[LogParser] Found SESSIONID line at line {lineCount}: {line}");
+                if (trimmed.StartsWith("SESSIONID=", StringComparison.OrdinalIgnoreCase) ||
+                    trimmed.StartsWith("GLOBAL SESSIONID", StringComparison.OrdinalIgnoreCase) ||
+                    trimmed.StartsWith("GLOBAL ", StringComparison.OrdinalIgnoreCase))
+                {
+                    inBlock = true;
+                    Console.WriteLine($"[LogParser] Found start of user variables block at line {lineCount}: {line}");
+                }
             }
             
             if (!inBlock) continue;
