@@ -68,9 +68,12 @@ public sealed class LogParserService
                 continue;
             }
             
-            // If we're in block and the line doesn't match either format and is not whitespace, end the block
+            // If we're in block and the line doesn't match either format
             if (inBlock && !string.IsNullOrWhiteSpace(trimmed))
             {
+                // Log the unmatched line for debugging
+                Console.WriteLine($"[LogParser] In block but line doesn't match pattern at line {lineCount}: {line}");
+                
                 // Check if it's a NOTE: line that would indicate end of the variable block
                 if (trimmed.StartsWith("NOTE:", StringComparison.OrdinalIgnoreCase))
                 {
@@ -81,6 +84,14 @@ public sealed class LogParserService
         }
         
         Console.WriteLine($"[LogParser] Summary: Total lines={lineCount}, Skipped={skippedLines}, Parsed={parsedLines}, Result count={result.Count}");
+        
+        // Log all parsed variables
+        Console.WriteLine($"[LogParser] All parsed variables:");
+        foreach (var kvp in result)
+        {
+            Console.WriteLine($"[LogParser]   {kvp.Key} = {kvp.Value}");
+        }
+        
         return result;
     }
 
