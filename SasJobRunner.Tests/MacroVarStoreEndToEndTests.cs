@@ -19,7 +19,9 @@ public class MacroVarStoreEndToEndTests : IDisposable
     private readonly string _tempStudyFolder;
     private readonly IConfiguration _configuration;
     private readonly ILogger<MacroVarStore> _logger;
+    private readonly ILogger<MacroProgramStore> _macroProgramLogger;
     private readonly ILogger<SessionJobOrchestrator> _orchestratorLogger;
+    private readonly ILogger<LogParserService> _logParserLogger;
 
     public MacroVarStoreEndToEndTests()
     {
@@ -38,7 +40,9 @@ public class MacroVarStoreEndToEndTests : IDisposable
 
         var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Debug));
         _logger = loggerFactory.CreateLogger<MacroVarStore>();
+        _macroProgramLogger = loggerFactory.CreateLogger<MacroProgramStore>();
         _orchestratorLogger = loggerFactory.CreateLogger<SessionJobOrchestrator>();
+        _logParserLogger = loggerFactory.CreateLogger<LogParserService>();
     }
 
     public void Dispose()
@@ -179,11 +183,13 @@ public class MacroVarStoreEndToEndTests : IDisposable
 
         // Create first MacroVarStore and orchestrator
         var store1 = new MacroVarStore(_configuration, _logger);
+        var macroProgramStore1 = new MacroProgramStore(_configuration, _macroProgramLogger);
+
+        var logParser = new LogParserService(_logParserLogger);
 
         // Mock external dependencies
         var mockHubClient = new Mock<ISlcHubClient>();
         var mockHistoryStore = new Mock<IProgramHistoryStore>();
-        var mockLogParser = new Mock<LogParserService>();
         var mockSignalrContext = new Mock<IHubContext<LogStreamingHub>>();
         var mockHttpContextAccessor = new Mock<IHttpContextAccessor>();
 
@@ -199,8 +205,9 @@ public class MacroVarStoreEndToEndTests : IDisposable
             mockHubClient.Object,
             preambleBuilder,
             store1,
+            macroProgramStore1,
             mockHistoryStore.Object,
-            mockLogParser.Object,
+            logParser,
             mockSignalrContext.Object,
             mockHttpContextAccessor.Object,
             _configuration,
@@ -234,13 +241,15 @@ public class MacroVarStoreEndToEndTests : IDisposable
         // ===== ACT 3: Simulate restart - create new store and orchestrator =====
         
         var store2 = new MacroVarStore(_configuration, _logger);
-        
+        var macroProgramStore2 = new MacroProgramStore(_configuration, _macroProgramLogger);
+
         var orchestrator2 = new SessionJobOrchestrator(
             mockHubClient.Object,
             preambleBuilder,
             store2,
+            macroProgramStore2,
             mockHistoryStore.Object,
-            mockLogParser.Object,
+            logParser,
             mockSignalrContext.Object,
             mockHttpContextAccessor.Object,
             _configuration,

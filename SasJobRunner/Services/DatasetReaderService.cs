@@ -10,6 +10,7 @@ namespace SasJobRunner.Services;
 public sealed class DatasetReaderService(
     ISlcHubClient hubClient,
     PreambleBuilder preambleBuilder,
+    IMacroProgramStore macroProgramStore,
     IConfiguration configuration,
     ILogger<DatasetReaderService> logger) : IDatasetReaderService
 {
@@ -67,7 +68,8 @@ PROC DELETE DATA=_meta_;
 RUN;
 ";
 
-        var preamble = preambleBuilder.Build(userId, sessionId, new Dictionary<string, string>());
+        var macroPrograms = await macroProgramStore.GetAsync(sessionId);
+        var preamble = preambleBuilder.Build(userId, sessionId, new Dictionary<string, string>(), macroPrograms);
         var fullCode = preamble + Environment.NewLine + sasCode;
 
         var jobId = await hubClient.CreateJobAsync(fullCode, ct);
@@ -220,7 +222,8 @@ PROC DELETE DATA=_export_page_;
 RUN;
 ";
 
-        var preamble = preambleBuilder.Build(userId, sessionId, new Dictionary<string, string>());
+        var macroPrograms = await macroProgramStore.GetAsync(sessionId);
+        var preamble = preambleBuilder.Build(userId, sessionId, new Dictionary<string, string>(), macroPrograms);
         var fullCode = preamble + Environment.NewLine + sasCode;
 
         var jobId = await hubClient.CreateJobAsync(fullCode, ct);

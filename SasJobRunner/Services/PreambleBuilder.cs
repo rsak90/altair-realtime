@@ -8,7 +8,7 @@ public sealed class PreambleBuilder
 
     public PreambleBuilder(IConfiguration configuration)
     {
-        _studyFolder = configuration["SessionStorage:StudyFolder"] 
+        _studyFolder = configuration["SessionStorage:StudyFolder"]
             ?? throw new InvalidOperationException("SessionStorage:StudyFolder configuration is required.");
     }
 
@@ -19,15 +19,27 @@ public sealed class PreambleBuilder
     public string Build(
         string userId,
         string sessionId,
-        IReadOnlyDictionary<string, string> macroVars)
+        IReadOnlyDictionary<string, string> macroVars,
+        string macroPrograms = "")
     {
         var sb = new StringBuilder();
-        // Ensure study folder doesn't end with slash, and construct full path
         var baseFolder = _studyFolder.TrimEnd('/');
+
+        sb.AppendLine("/* === SESSION LIBRARY DEFINITION === */");
         sb.AppendLine($"""LIBNAME SESSLIB "{baseFolder}/sessions/{userId}/{sessionId}/";""");
+
+        if (!string.IsNullOrWhiteSpace(macroPrograms))
+        {
+            sb.AppendLine("/* === MACRO PROGRAM RESTORATION === */");
+            sb.AppendLine(macroPrograms.TrimEnd());
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("/* === MACRO VARIABLE RESTORATION === */");
         sb.AppendLine(MacroLetBuilder.Build("SESSIONID", sessionId));
         foreach (var (name, value) in macroVars)
             sb.AppendLine(MacroLetBuilder.Build(name, value));
+
         return sb.ToString();
     }
 }

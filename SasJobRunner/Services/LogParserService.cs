@@ -1,17 +1,57 @@
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 using SasJobRunner.Models;
 
 namespace SasJobRunner.Services;
 
-public sealed class LogParserService
+public sealed class LogParserService(ILogger<LogParserService> logger)
 {
-    // Regex matching lines like:  MYVAR=hello world
     private static readonly Regex UserVarRegex =
         new(@"^([A-Z_][A-Z0-9_]*)=(.*)$", RegexOptions.Compiled | RegexOptions.Multiline);
-    
-    // Regex matching lines like:  GLOBAL MYVAR hello world  (for %put user; output)
+
     private static readonly Regex GlobalVarRegex =
         new(@"^GLOBAL\s+([A-Z_][A-Z0-9_]*)\s+(.*)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex MacroStartRegex =
+        new(@"=== MACRO_SOURCE_START:\s*([A-Z_][A-Z0-9_]*)\s*===", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex MacroEndRegex =
+        new(@"=== MACRO_SOURCE_END:\s*([A-Z_][A-Z0-9_]*)\s*===", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Generates SAS postamble code that enumerates WORK.SASMACR macros and writes their source to the log.
+    /// </summary>
+    public static string GenerateMacroCatalogExtractionCode() =>
+        """
+        /* === MACRO CATALOG EXTRACTION START === */
+        proc catalog catalog=work.sasmacr;
+           contents;
+        quit;
+
+        %macro _extract_macros;
+           %local _i _name;
+           proc sql noprint;
+              select objname into :_name separated by '|'
+              from dictionary.catalogs
+              where libname='WORK' and memname='SASMACR' and objtype='MACRO';
+           quit;
+
+           %let _i = 1;
+           %let _name = %scan(&_name, &_i, '|');
+           %do %while("&_name" ne "");
+              %if %substr(&_name, 1, 4) ne SYS_ %then %do;
+                 %put === MACRO_SOURCE_START: &_name ===;
+                 %copy &_name / source;
+                 %put === MACRO_SOURCE_END: &_name ===;
+              %end;
+              %let _i = %eval(&_i + 1);
+              %let _name = %scan(&_name, &_i, '|');
+           %end;
+        %mend _extract_macros;
+
+        %_extract_macros;
+        /* === MACRO CATALOG EXTRACTION END === */
+        """;
 
     /// <summary>
     /// Scans log lines for the %put _user_; or %put user; output block.
@@ -24,22 +64,19 @@ public sealed class LogParserService
         var lineCount = 0;
         var skippedLines = 0;
         var parsedLines = 0;
-        
+
         foreach (var line in logLines)
         {
             lineCount++;
-            
-            // Skip MPRINT and MLOGIC lines
+
             if (line.Contains("MPRINT") || line.Contains("MLOGIC"))
             {
                 skippedLines++;
                 continue;
             }
-            
+
             var trimmed = line.TrimStart();
-            
-            // Look for the start of the _user_ block
-            // Start on SESSIONID or any GLOBAL variable line
+
             if (!inBlock)
             {
                 if (trimmed.StartsWith("SESSIONID=", StringComparison.OrdinalIgnoreCase) ||
@@ -50,10 +87,9 @@ public sealed class LogParserService
                     Console.WriteLine($"[LogParser] Found start of user variables block at line {lineCount}: {line}");
                 }
             }
-            
+
             if (!inBlock) continue;
-            
-            // Try format 1: MYVAR=value (from %put _user_;)
+
             var m1 = UserVarRegex.Match(trimmed);
             if (m1.Success)
             {
@@ -62,8 +98,7 @@ public sealed class LogParserService
                 Console.WriteLine($"[LogParser] Parsed variable (format 1): {m1.Groups[1].Value} = {m1.Groups[2].Value.TrimEnd()}");
                 continue;
             }
-            
-            // Try format 2: GLOBAL MYVAR value (from %put user;)
+
             var m2 = GlobalVarRegex.Match(trimmed);
             if (m2.Success)
             {
@@ -72,14 +107,11 @@ public sealed class LogParserService
                 Console.WriteLine($"[LogParser] Parsed variable (format 2): {m2.Groups[1].Value} = {m2.Groups[2].Value.TrimEnd()}");
                 continue;
             }
-            
-            // If we're in block and the line doesn't match either format
+
             if (inBlock && !string.IsNullOrWhiteSpace(trimmed))
             {
-                // Log the unmatched line for debugging
                 Console.WriteLine($"[LogParser] In block but line doesn't match pattern at line {lineCount}: {line}");
-                
-                // Check if it's a NOTE: line that would indicate end of the variable block
+
                 if (trimmed.StartsWith("NOTE:", StringComparison.OrdinalIgnoreCase))
                 {
                     Console.WriteLine($"[LogParser] End of _user_ block detected at line {lineCount}: {line}");
@@ -87,16 +119,85 @@ public sealed class LogParserService
                 }
             }
         }
-        
+
         Console.WriteLine($"[LogParser] Summary: Total lines={lineCount}, Skipped={skippedLines}, Parsed={parsedLines}, Result count={result.Count}");
-        
-        // Log all parsed variables
-        Console.WriteLine($"[LogParser] All parsed variables:");
+
+        Console.WriteLine("[LogParser] All parsed variables:");
         foreach (var kvp in result)
-        {
             Console.WriteLine($"[LogParser]   {kvp.Key} = {kvp.Value}");
+
+        return result;
+    }
+
+    /// <summary>
+    /// Parses macro catalog extraction output from job log.
+    /// Looks for macro extraction markers and reconstructs macro source code.
+    /// </summary>
+    public Dictionary<string, string> ParseMacroCatalog(IEnumerable<string> logLines)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        string? currentMacroName = null;
+        var currentLines = new List<string>();
+
+        foreach (var line in logLines)
+        {
+            var startMatch = MacroStartRegex.Match(line);
+            if (startMatch.Success)
+            {
+                var macroName = startMatch.Groups[1].Value;
+
+                if (macroName.StartsWith("SYS_", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (currentMacroName != null)
+                {
+                    logger.LogWarning(
+                        "Macro catalog parsing encountered a new start marker for '{NewMacroName}' before end marker for '{PreviousMacroName}'. Skipping incomplete macro.",
+                        macroName, currentMacroName);
+                }
+
+                currentMacroName = macroName;
+                currentLines.Clear();
+                continue;
+            }
+
+            if (currentMacroName != null)
+            {
+                var endMatch = MacroEndRegex.Match(line);
+                if (endMatch.Success)
+                {
+                    var endName = endMatch.Groups[1].Value;
+                    if (!endName.Equals(currentMacroName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        logger.LogWarning(
+                            "Macro catalog parsing found mismatched end marker '{EndName}' for macro '{StartName}'. Skipping macro.",
+                            endName, currentMacroName);
+                        currentMacroName = null;
+                        currentLines.Clear();
+                        continue;
+                    }
+
+                    var source = string.Join(Environment.NewLine, currentLines).Trim();
+                    if (!string.IsNullOrWhiteSpace(source))
+                        result[currentMacroName] = source;
+
+                    currentMacroName = null;
+                    currentLines.Clear();
+                    continue;
+                }
+
+                currentLines.Add(ExtractLogMessageContent(line));
+            }
         }
-        
+
+        if (currentMacroName != null)
+        {
+            logger.LogWarning(
+                "Macro catalog parsing found incomplete macro '{MacroName}' (missing end marker). Skipping macro.",
+                currentMacroName);
+        }
+
+        logger.LogDebug("Parsed {MacroCount} macro programs from job log", result.Count);
         return result;
     }
 
@@ -111,9 +212,22 @@ public sealed class LogParserService
         foreach (var line in logLines)
         {
             var t = line.TrimStart();
-            if (t.StartsWith("ERROR",   StringComparison.OrdinalIgnoreCase)) return line;
+            if (t.StartsWith("ERROR", StringComparison.OrdinalIgnoreCase)) return line;
             if (t.StartsWith("WARNING", StringComparison.OrdinalIgnoreCase)) return line;
         }
         return "Completed";
+    }
+
+    private static string ExtractLogMessageContent(string line)
+    {
+        var trimmed = line.TrimStart();
+
+        if (trimmed.StartsWith("NOTE:", StringComparison.OrdinalIgnoreCase))
+            return trimmed["NOTE:".Length..].TrimStart();
+
+        if (trimmed.StartsWith("MLOGIC(", StringComparison.OrdinalIgnoreCase))
+            return trimmed;
+
+        return line;
     }
 }

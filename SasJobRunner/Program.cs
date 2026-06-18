@@ -51,6 +51,7 @@ builder.Services.AddScoped<LogParserService>();
 
 // ── Singleton stores ──────────────────────────────────────────────────────────
 builder.Services.AddSingleton<IMacroVarStore, MacroVarStore>();
+builder.Services.AddSingleton<IMacroProgramStore, MacroProgramStore>();
 builder.Services.AddSingleton<IProgramHistoryStore, ProgramHistoryStore>();
 
 // ── SignalR ───────────────────────────────────────────────────────────────────

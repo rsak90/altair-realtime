@@ -8,6 +8,7 @@ public sealed class SessionJobOrchestrator(
     ISlcHubClient hubClient,
     PreambleBuilder preambleBuilder,
     IMacroVarStore macroVarStore,
+    IMacroProgramStore macroProgramStore,
     IProgramHistoryStore historyStore,
     LogParserService logParser,
     IHubContext<LogStreamingHub> signalrContext,
@@ -31,17 +32,23 @@ public sealed class SessionJobOrchestrator(
         }
 
         // Register session with userId before GetAsync to enable immediate userId resolution
-        // This avoids the need for filesystem scanning when MacroVarStore needs to construct file paths
-        if (macroVarStore is MacroVarStore concreteStore)
-        {
-            concreteStore.RegisterSession(sessionId, userId);
-        }
+        if (macroVarStore is MacroVarStore macroVarStoreConcrete)
+            macroVarStoreConcrete.RegisterSession(sessionId, userId);
+
+        if (macroProgramStore is MacroProgramStore macroProgramStoreConcrete)
+            macroProgramStoreConcrete.RegisterSession(sessionId, userId);
 
         var macroVars = await macroVarStore.GetAsync(sessionId);
-        var preamble  = preambleBuilder.Build(userId, sessionId, macroVars);
+        var macroPrograms = await macroProgramStore.GetAsync(sessionId);
+        var preamble = preambleBuilder.Build(userId, sessionId, macroVars, macroPrograms);
+
+        var postamble = "%put _user_;";
+        if (!string.IsNullOrWhiteSpace(configuration["SessionStorage:StudyFolder"]))
+            postamble += Environment.NewLine + LogParserService.GenerateMacroCatalogExtractionCode();
+
         var full = preamble + Environment.NewLine
                  + userSourceCode + Environment.NewLine
-                 + "%put _user_;";
+                 + postamble;
 
         logger.LogDebug("Submitting job with code:");
         logger.LogDebug("=== CODE START ===");
@@ -235,14 +242,39 @@ public sealed class SessionJobOrchestrator(
                 {
                     logger.LogInformation("  {Name} = {Value}", name, value);
                 }
-                
-                logger.LogDebug("Job {JobId}: Calling SetAsync to persist {Count} variables for session {SessionId}", 
+
+                logger.LogDebug("Job {JobId}: Calling SetAsync to persist {Count} variables for session {SessionId}",
                     jobId, newVars.Count, sessionId);
                 await macroVarStore.SetAsync(sessionId, newVars);
             }
             else
             {
                 logger.LogWarning("Job {JobId}: No macro variables to persist for session {SessionId}. This might indicate the log is not being parsed correctly.", jobId, sessionId);
+            }
+
+            if (status is "CompletedSuccess" or "CompletedError" or "Failed")
+            {
+                try
+                {
+                    var parsedMacros = logParser.ParseMacroCatalog(logLines);
+                    logger.LogInformation(
+                        "Job {JobId}: Parsed {Count} macro programs from log for session {SessionId}",
+                        jobId, parsedMacros.Count, sessionId);
+
+                    if (parsedMacros.Count > 0)
+                    {
+                        if (macroProgramStore is MacroProgramStore macroStoreConcrete)
+                            macroStoreConcrete.RegisterSession(sessionId, userId);
+
+                        await macroProgramStore.SetAsync(sessionId, parsedMacros);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex,
+                        "Job {JobId}: Failed to parse or persist macro programs for session {SessionId}. Job completion continues.",
+                        jobId, sessionId);
+                }
             }
 
             // Persist program history
