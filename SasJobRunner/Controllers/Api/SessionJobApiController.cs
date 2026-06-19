@@ -22,13 +22,34 @@ public sealed class SessionJobApiController(
         [FromBody] JobSubmitRequest request,
         CancellationToken ct)
     {
+        return await SubmitJobCore(request, usePersistentWork: false, ct);
+    }
+
+    /// <summary>
+    /// Accepts a job submission request and uses SLC system options for persistent WORK behavior.
+    /// </summary>
+    [HttpPost("api/session-jobs/persistent-work")]
+    public async Task<IActionResult> SubmitJobWithPersistentWork(
+        [FromBody] JobSubmitRequest request,
+        CancellationToken ct)
+    {
+        return await SubmitJobCore(request, usePersistentWork: true, ct);
+    }
+
+    private async Task<IActionResult> SubmitJobCore(
+        JobSubmitRequest request,
+        bool usePersistentWork,
+        CancellationToken ct)
+    {
         var userId = HttpContext.Session.GetString("UserId");
         if (string.IsNullOrEmpty(userId))
             return BadRequest("UserId not in session.");
 
         try
         {
-            var jobId = await orchestrator.SubmitAsync(userId, request.SessionId, request.SourceCode, ct);
+            var jobId = usePersistentWork
+                ? await orchestrator.SubmitWithPersistentWorkAsync(userId, request.SessionId, request.SourceCode, ct)
+                : await orchestrator.SubmitAsync(userId, request.SessionId, request.SourceCode, ct);
             return Ok(new JobSubmitResponse(jobId));
         }
         catch (SlcHubException ex)
