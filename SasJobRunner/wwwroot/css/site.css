@@ -199,6 +199,17 @@ button[type="submit"]:not(:disabled):hover {
     border-color: #0a58ca;
 }
 
+button.btn-secondary[type="button"] {
+    background-color: #495057;
+    border-color: #495057;
+    color: #fff;
+}
+
+button.btn-secondary[type="button"]:not(:disabled):hover {
+    background-color: #3d444a;
+    border-color: #373e44;
+}
+
 /* Smaller secondary variant used in macro panel */
 .macro-save-btn {
     background-color: #198754;

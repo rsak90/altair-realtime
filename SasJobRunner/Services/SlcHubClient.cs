@@ -62,6 +62,38 @@ public sealed class SlcHubClient(
     }
 
     /// <inheritdoc/>
+    public async Task<string> CreateJobWithSystemOptionsAsync(
+        string assembledCode,
+        IReadOnlyList<SlcHubSystemOption> systemOptions,
+        CancellationToken ct = default)
+    {
+        ApplyBearerToken();
+        var ns = configuration["SlcHub:Namespace"]!;
+        var profile = configuration["SlcHub:ExecutionProfile"]!;
+        var response = await httpClient.PostAsJsonAsync(
+            $"/api/v2/namespaces/{ns}/jobs",
+            new
+            {
+                code = assembledCode,
+                executionProfile = profile,
+                systemOptions = systemOptions.Select(option => new
+                {
+                    name = option.Name,
+                    value = option.Value,
+                    mergeType = option.MergeType
+                })
+            },
+            ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(ct);
+            throw new SlcHubException(body, (int)response.StatusCode);
+        }
+        var result = await response.Content.ReadFromJsonAsync<JobIdResult>(ct);
+        return result!.JobId;
+    }
+
+    /// <inheritdoc/>
     public async Task CommitJobAsync(string jobId, CancellationToken ct = default)
     {
         ApplyBearerToken();

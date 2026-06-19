@@ -20,6 +20,21 @@ public sealed class SessionJobOrchestrator(
         string userId, string sessionId, string userSourceCode,
         CancellationToken ct = default)
     {
+        return await SubmitCoreAsync(userId, sessionId, userSourceCode, usePersistentWork: false, ct);
+    }
+
+    public async Task<string> SubmitWithPersistentWorkAsync(
+        string userId, string sessionId, string userSourceCode,
+        CancellationToken ct = default)
+    {
+        return await SubmitCoreAsync(userId, sessionId, userSourceCode, usePersistentWork: true, ct);
+    }
+
+    private async Task<string> SubmitCoreAsync(
+        string userId, string sessionId, string userSourceCode,
+        bool usePersistentWork,
+        CancellationToken ct)
+    {
         // Ensure execution folder exists before submitting job
         var studyFolder = configuration["SessionStorage:StudyFolder"] 
             ?? throw new InvalidOperationException("SessionStorage:StudyFolder configuration is required.");
@@ -56,7 +71,9 @@ public sealed class SessionJobOrchestrator(
         logger.LogDebug("=== CODE END ===");
 
         // Create job draft
-        var jobId = await hubClient.CreateJobAsync(full, ct);
+        var jobId = usePersistentWork
+            ? await hubClient.CreateJobWithSystemOptionsAsync(full, BuildPersistentWorkSystemOptions(userId), ct)
+            : await hubClient.CreateJobAsync(full, ct);
         // Commit job to start execution
         await hubClient.CommitJobAsync(jobId, ct);
 
@@ -68,6 +85,46 @@ public sealed class SessionJobOrchestrator(
         _ = StreamAndFinalizeAsync(userId, sessionId, jobId, userSourceCode, bearerToken, CancellationToken.None);
 
         return jobId;
+    }
+
+    private IReadOnlyList<SlcHubSystemOption> BuildPersistentWorkSystemOptions(string userId)
+    {
+        var workPath = BuildPersistentWorkPath(userId);
+
+        return
+        [
+            new("NOWORKINIT", string.Empty, "set"),
+            new("NOWORKTERM", string.Empty, "set"),
+            new("WORK", workPath, "set"),
+            new("TERMSTMT", "data work.vmacro;set sashelp.vmacro; WHERE scope='GLOBAL'; run; data _null_; set work.vmacro; put name= scope= value=; run;", "set"),
+            new("INITSTMT", "%if %sysfunc(exist(work.vmacro)) %then %do; data _null_; set work.vmacro; if scope eq 'GLOBAL' then do; call symput(name,value); end; run; %end;", "set")
+        ];
+    }
+
+    private string BuildPersistentWorkPath(string userId)
+    {
+        var root = configuration["SlcHub:PersistentWorkRoot"];
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            var studyFolder = configuration["SessionStorage:StudyFolder"]
+                ?? throw new InvalidOperationException("SessionStorage:StudyFolder configuration is required.");
+            root = Path.Combine(studyFolder, "work");
+        }
+
+        var safeUserId = SanitizePathSegment(userId);
+        var separator = root.Contains('\\') ? "\\" : "/";
+        return root.TrimEnd('\\', '/') + separator + safeUserId;
+    }
+
+    private static string SanitizePathSegment(string value)
+    {
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var chars = value
+            .Select(ch => invalidChars.Contains(ch) || ch is '/' or '\\' or ':' ? '_' : ch)
+            .ToArray();
+
+        var sanitized = new string(chars).Trim();
+        return string.IsNullOrWhiteSpace(sanitized) ? "user" : sanitized;
     }
 
     private async Task StreamAndFinalizeAsync(

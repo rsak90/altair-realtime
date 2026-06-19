@@ -49,72 +49,60 @@
         // ── Submit button ────────────────────────────────────────────────────
 
         const submitBtn = document.getElementById('btn-submit');
+        const submitPersistentWorkBtn = document.getElementById('btn-submit-persistent-work');
         const submitError = document.getElementById('submit-error');
 
         if (submitBtn) {
-            submitBtn.addEventListener('click', async function () {
-                if (!editor) return;
+            submitBtn.addEventListener('click', () => submitJob('/api/session-jobs'));
+        }
 
-                const sourceCode = editor.getValue();
+        if (submitPersistentWorkBtn) {
+            submitPersistentWorkBtn.addEventListener('click', () => submitJob('/api/session-jobs/persistent-work'));
+        }
 
-                // Read sessionId from the editor container data attribute
-                const sessionId = editorContainer.getAttribute('data-session-id') || '';
+        async function submitJob(endpoint) {
+            if (!editor) return;
 
-                if (!sessionId) {
-                    showSubmitError('No active session. Please create or resume a session first.');
-                    return;
-                }
+            const sourceCode = editor.getValue();
+            const sessionId = editorContainer.getAttribute('data-session-id') || '';
 
-                submitBtn.disabled = true;
-                clearSubmitError();
+            if (!sessionId) {
+                showSubmitError('No active session. Please create or resume a session first.');
+                return;
+            }
 
-                try {
-                    const response = await fetch('/api/session-jobs', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ sessionId, sourceCode })
-                    });
+            setSubmitButtonsDisabled(true);
+            clearSubmitError();
 
-                    if (response.ok) {
-                        const data = await response.json();
-                        const jobId = data.jobId;
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ sessionId, sourceCode })
+                });
 
-                        // Hand off to log-viewer.js
-                        if (typeof window.joinJob === 'function') {
-                            window.joinJob(jobId);
-                        }
-                    } else {
-                        let errorMessage = `HTTP ${response.status}`;
-                        
-                        try {
-                            const errorData = await response.json();
-                            if (errorData.error) {
-                                errorMessage = `${errorData.error}`;
-                                if (errorData.detail) {
-                                    errorMessage += `: ${errorData.detail}`;
-                                }
-                                if (errorData.statusCode) {
-                                    errorMessage += ` (Status: ${errorData.statusCode})`;
-                                }
-                            }
-                        } catch (e) {
-                            // If JSON parsing fails, try text
-                            const errorText = await response.text();
-                            if (errorText) {
-                                errorMessage = errorText;
-                            }
-                        }
-                        
-                        showSubmitError(errorMessage);
+                if (response.ok) {
+                    const data = await response.json();
+                    const jobId = data.jobId;
+
+                    if (typeof window.joinJob === 'function') {
+                        window.joinJob(jobId);
                     }
-                } catch (err) {
-                    showSubmitError('Request failed: ' + err.message);
-                } finally {
-                    submitBtn.disabled = false;
+                } else {
+                    showSubmitError(await getSubmitErrorMessage(response));
                 }
-            });
+            } catch (err) {
+                showSubmitError('Request failed: ' + err.message);
+            } finally {
+                setSubmitButtonsDisabled(false);
+            }
+        }
+
+        function setSubmitButtonsDisabled(disabled) {
+            if (submitBtn) submitBtn.disabled = disabled;
+            if (submitPersistentWorkBtn) submitPersistentWorkBtn.disabled = disabled;
         }
     });
 
@@ -144,6 +132,30 @@
      * Sets the editor content. Called by the history view to reload past code.
      * @param {string} code
      */
+    async function getSubmitErrorMessage(response) {
+        let errorMessage = `HTTP ${response.status}`;
+
+        try {
+            const errorData = await response.json();
+            if (errorData.error) {
+                errorMessage = `${errorData.error}`;
+                if (errorData.detail) {
+                    errorMessage += `: ${errorData.detail}`;
+                }
+                if (errorData.statusCode) {
+                    errorMessage += ` (Status: ${errorData.statusCode})`;
+                }
+            }
+        } catch (e) {
+            const errorText = await response.text();
+            if (errorText) {
+                errorMessage = errorText;
+            }
+        }
+
+        return errorMessage;
+    }
+
     function loadCode(code) {
         if (editor) {
             editor.setValue(code);

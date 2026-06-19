@@ -16,6 +16,14 @@ public interface ISlcHubClient
     Task<string> CreateJobAsync(string assembledCode, CancellationToken ct = default);
 
     /// <summary>
+    /// Creates a job draft with SLC system options and returns the jobId.
+    /// </summary>
+    Task<string> CreateJobWithSystemOptionsAsync(
+        string assembledCode,
+        IReadOnlyList<SlcHubSystemOption> systemOptions,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Commits a job draft, starting execution.
     /// POST to /api/v2/namespaces/{namespace}/jobs/{jobId}/commit.
     /// Throws <see cref="SlcHubException"/> on non-2xx response.
