@@ -17,4 +17,12 @@ public interface IMacroProgramStore
     /// <param name="sessionId">The session identifier</param>
     /// <param name="macros">Dictionary mapping macro names to source code</param>
     Task SetAsync(string sessionId, IReadOnlyDictionary<string, string> macros);
+
+    /// <summary>
+    /// Merges macro program definitions into the existing session store.
+    /// Existing macros with the same name are replaced; other macros are preserved.
+    /// </summary>
+    /// <param name="sessionId">The session identifier</param>
+    /// <param name="macros">Dictionary mapping macro names to source code</param>
+    Task MergeAsync(string sessionId, IReadOnlyDictionary<string, string> macros);
 }

@@ -18,6 +18,12 @@ public sealed class LogParserService(ILogger<LogParserService> logger)
     private static readonly Regex MacroEndRegex =
         new(@"=== MACRO_SOURCE_END:\s*([A-Z_][A-Z0-9_]*)\s*===", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    private static readonly Regex MacroDefinitionStartRegex =
+        new(@"%macro\s+([A-Z_][A-Z0-9_]*)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex MacroDefinitionEndRegex =
+        new(@"%mend(?:\s+([A-Z_][A-Z0-9_]*))?\s*;", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     /// <summary>
     /// Generates SAS postamble code that enumerates WORK.SASMACR macros and writes their source to the log.
     /// </summary>
@@ -198,6 +204,62 @@ public sealed class LogParserService(ILogger<LogParserService> logger)
         }
 
         logger.LogDebug("Parsed {MacroCount} macro programs from job log", result.Count);
+        return result;
+    }
+
+    /// <summary>
+    /// Parses user-submitted SAS source for explicit %macro/%mend definitions.
+    /// This avoids relying on SLC Hub catalog extraction support.
+    /// </summary>
+    public Dictionary<string, string> ParseMacroDefinitionsFromSource(string sourceCode)
+    {
+        var result = ParseMacroDefinitionsFromSourceText(sourceCode);
+        logger.LogDebug("Parsed {MacroCount} macro programs from submitted source", result.Count);
+        return result;
+    }
+
+    internal static Dictionary<string, string> ParseMacroDefinitionsFromSourceText(string sourceCode)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        if (string.IsNullOrWhiteSpace(sourceCode))
+            return result;
+
+        var searchIndex = 0;
+        while (searchIndex < sourceCode.Length)
+        {
+            var startMatch = MacroDefinitionStartRegex.Match(sourceCode, searchIndex);
+            if (!startMatch.Success)
+                break;
+
+            var macroName = startMatch.Groups[1].Value;
+            searchIndex = startMatch.Index + startMatch.Length;
+
+            if (macroName.StartsWith("SYS_", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var endSearchIndex = searchIndex;
+            while (endSearchIndex < sourceCode.Length)
+            {
+                var endMatch = MacroDefinitionEndRegex.Match(sourceCode, endSearchIndex);
+                if (!endMatch.Success)
+                    break;
+
+                var endName = endMatch.Groups[1].Success ? endMatch.Groups[1].Value : macroName;
+                endSearchIndex = endMatch.Index + endMatch.Length;
+
+                if (!endName.Equals(macroName, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var macroSource = sourceCode[startMatch.Index..endSearchIndex].Trim();
+                if (!string.IsNullOrWhiteSpace(macroSource))
+                    result[macroName] = macroSource;
+
+                searchIndex = endSearchIndex;
+                break;
+            }
+        }
+
         return result;
     }
 

@@ -43,7 +43,7 @@ public sealed class SessionJobOrchestrator(
         var preamble = preambleBuilder.Build(userId, sessionId, macroVars, macroPrograms);
 
         var postamble = "%put _user_;";
-        if (!string.IsNullOrWhiteSpace(configuration["SessionStorage:StudyFolder"]))
+        if (configuration.GetValue<bool>("SessionStorage:EnableMacroCatalogExtraction"))
             postamble += Environment.NewLine + LogParserService.GenerateMacroCatalogExtractionCode();
 
         var full = preamble + Environment.NewLine
@@ -256,9 +256,18 @@ public sealed class SessionJobOrchestrator(
             {
                 try
                 {
-                    var parsedMacros = logParser.ParseMacroCatalog(logLines);
+                    var parsedMacros = logParser.ParseMacroDefinitionsFromSource(userSourceCode);
+
+                    if (configuration.GetValue<bool>("SessionStorage:EnableMacroCatalogExtraction"))
+                    {
+                        foreach (var (name, source) in logParser.ParseMacroCatalog(logLines))
+                        {
+                            parsedMacros[name] = source;
+                        }
+                    }
+
                     logger.LogInformation(
-                        "Job {JobId}: Parsed {Count} macro programs from log for session {SessionId}",
+                        "Job {JobId}: Parsed {Count} macro programs from submitted source/catalog output for session {SessionId}",
                         jobId, parsedMacros.Count, sessionId);
 
                     if (parsedMacros.Count > 0)
@@ -266,7 +275,7 @@ public sealed class SessionJobOrchestrator(
                         if (macroProgramStore is MacroProgramStore macroStoreConcrete)
                             macroStoreConcrete.RegisterSession(sessionId, userId);
 
-                        await macroProgramStore.SetAsync(sessionId, parsedMacros);
+                        await macroProgramStore.MergeAsync(sessionId, parsedMacros);
                     }
                 }
                 catch (Exception ex)

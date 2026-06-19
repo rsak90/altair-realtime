@@ -67,6 +67,7 @@ public sealed class MacroProgramStore : IMacroProgramStore
         var macroCount = CountMacroDefinitions(macroSource);
 
         _cache[sessionId] = macroSource;
+        _loadedFromDisk.TryAdd(sessionId, true);
 
         _logger.LogDebug(
             "SetAsync called for session {SessionId} with {Count} macros ({ValidCount} valid in formatted output)",
@@ -91,6 +92,29 @@ public sealed class MacroProgramStore : IMacroProgramStore
         }
 
         return Task.CompletedTask;
+    }
+
+    public async Task MergeAsync(string sessionId, IReadOnlyDictionary<string, string> macros)
+    {
+        if (macros.Count == 0)
+        {
+            _logger.LogDebug("MergeAsync called for session {SessionId} with no macro programs", sessionId);
+            return;
+        }
+
+        var existingSource = await GetAsync(sessionId);
+        var merged = LogParserService.ParseMacroDefinitionsFromSourceText(existingSource);
+
+        foreach (var (name, source) in macros)
+        {
+            merged[name] = source;
+        }
+
+        _logger.LogDebug(
+            "MergeAsync called for session {SessionId}: merging {IncomingCount} macro programs into {MergedCount} total definitions",
+            sessionId, macros.Count, merged.Count);
+
+        await SetAsync(sessionId, merged);
     }
 
     internal void RegisterSession(string sessionId, string userId)
@@ -178,7 +202,7 @@ public sealed class MacroProgramStore : IMacroProgramStore
             $@"%macro\s+{Regex.Escape(macroName)}\b",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         var mendPattern = new Regex(
-            $@"%mend\s+{Regex.Escape(macroName)}\s*;",
+            $@"%mend(?:\s+{Regex.Escape(macroName)})?\s*;",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
         var macroMatches = macroPattern.Matches(macroSource);
